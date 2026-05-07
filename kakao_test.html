@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreshMate 카카오 로그인</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #24272f;
+      background: #f4f6fa;
+    }
+
+    main {
+      width: min(760px, calc(100% - 32px));
+      margin: 48px auto;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: #626b78;
+      line-height: 1.6;
+    }
+
+    section {
+      margin-top: 16px;
+      padding: 22px;
+      border: 1px solid #d8dde6;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      font-weight: 700;
+      color: #363b44;
+    }
+
+    input {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid #c8ced8;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #fff;
+    }
+
+    button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 16px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      color: #191600;
+      background: #fee500;
+    }
+
+    button.secondary {
+      color: #fff;
+      background: #2f6fed;
+    }
+
+    button.ghost {
+      color: #333842;
+      background: #e8ebf0;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: #eef3ff;
+      color: #24447f;
+      font-weight: 700;
+    }
+
+    .status.error {
+      background: #fff0f0;
+      color: #b42318;
+    }
+
+    .status.success {
+      background: #ecfdf3;
+      color: #067647;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .profile {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 8px 12px;
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 6px;
+      background: #f7f9fc;
+    }
+
+    .profile dt {
+      margin: 0;
+      color: #697280;
+      font-weight: 700;
+    }
+
+    .profile dd {
+      margin: 0;
+      min-width: 0;
+      word-break: break-word;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 14px 0 0;
+      padding: 14px;
+      border-radius: 6px;
+      color: #f4f7fb;
+      background: #20242c;
+      line-height: 1.45;
+      min-height: 90px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 720px) {
+      main {
+        margin: 28px auto;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .grid,
+      .profile {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>FreshMate 카카오 로그인</h1>
+      <p>카카오 계정으로 로그인하고, 백엔드에서 JWT가 발급되는지 바로 확인합니다.</p>
+    </header>
+
+    <section>
+      <h2>로그인</h2>
+      <label for="apiBase">API 서버 주소</label>
+      <input id="apiBase" value="http://127.0.0.1:8000">
+
+      <div class="actions">
+        <button id="loginButton">카카오로 계속하기</button>
+        <button class="secondary" id="meButton">내 정보 다시 불러오기</button>
+        <button class="ghost" id="logoutButton">토큰 삭제</button>
+      </div>
+
+      <div id="status" class="status">
+        <span class="dot"></span>
+        <span id="statusText">로그인 전입니다.</span>
+      </div>
+
+      <dl id="profile" class="profile" hidden></dl>
+      <pre id="debugOutput">응답 대기 중</pre>
+    </section>
+
+    <section>
+      <h2>일반 회원가입 / 로그인</h2>
+      <p>아이디, 비밀번호, 전화번호로 FreshMate 자체 계정을 테스트합니다.</p>
+
+      <div class="grid">
+        <div>
+          <label for="localUsername">아이디</label>
+          <input id="localUsername" placeholder="freshmate_user">
+        </div>
+        <div>
+          <label for="localPassword">비밀번호</label>
+          <input id="localPassword" type="password" placeholder="8자 이상">
+        </div>
+        <div>
+          <label for="localPhoneNumber">전화번호</label>
+          <input id="localPhoneNumber" placeholder="01012345678">
+        </div>
+      </div>
+
+      <label for="localEmail">이메일</label>
+      <input id="localEmail" placeholder="user@example.com">
+
+      <div class="actions">
+        <button class="secondary" id="localSignupButton">일반 회원가입</button>
+        <button class="ghost" id="localLoginButton">일반 로그인</button>
+      </div>
+    </section>
+
+    <section id="onboardingSection" hidden>
+      <h2>온보딩 정보 입력</h2>
+      <p>카카오에서 전화번호가 오지 않은 경우 여기서 추가 정보를 저장합니다.</p>
+
+      <div class="grid">
+        <div>
+          <label for="phoneNumber">전화번호</label>
+          <input id="phoneNumber" placeholder="01012345678">
+        </div>
+        <div>
+          <label for="latitude">위도</label>
+          <input id="latitude" placeholder="37.5665">
+        </div>
+        <div>
+          <label for="longitude">경도</label>
+          <input id="longitude" placeholder="126.9780">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="ghost" id="locationButton">현재 위치 가져오기</button>
+        <button class="secondary" id="onboardingButton">온보딩 저장</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const tokenKey = "freshmate_access_token";
+    const $ = (id) => document.getElementById(id);
+
+    // 현재 페이지가 HTTP 환경인지 확인하는 함수
+    function isHttpPage() {
+      return window.location.protocol === "http:" || window.location.protocol === "https:";
+    }
+
+    // API 서버 주소 반환 함수
+    function getApiBase() {
+      if (isHttpPage()) {
+        return window.location.origin;
+      }
+      return $("apiBase").value.replace(/\/$/, "");
+    }
+
+    // 카카오 로그인 redirect_uri 생성 함수
+    function getRedirectUri() {
+      if (isHttpPage()) {
+        return `${window.location.origin}${window.location.pathname}`;
+      }
+      return `${getApiBase()}/auth/kakao/test`;
+    }
+
+    // 화면 상태 메시지 변경 함수
+    function setStatus(message, type = "") {
+      $("statusText").textContent = message;
+      $("status").className = `status ${type}`.trim();
+    }
+
+    // 디버그 응답 출력 함수
+    function showDebug(value) {
+      $("debugOutput").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    // 카카오 에러 메시지 변환 함수
+    function getErrorMessage(error) {
+      // 카카오 주요 오류 코드 안내
+      const kakaoError = error && error.detail && error.detail.kakao_error;
+      const errorCode = kakaoError && kakaoError.error_code;
+
+      if (errorCode === "KOE010") {
+        return [
+          "카카오 앱 인증 정보가 맞지 않습니다.",
+          "1. .env의 KAKAO_REST_API_KEY가 카카오 Developers의 REST API 키인지 확인하세요.",
+          "2. 카카오 Developers에서 Client Secret을 사용 중이면 .env에 KAKAO_CLIENT_SECRET도 추가하세요.",
+          "3. 값을 바꾼 뒤 uvicorn 서버를 재시작하세요.",
+        ].join("\n");
+      }
+
+      if (errorCode === "KOE006") {
+        return "Redirect URI가 카카오 Developers에 등록된 값과 다릅니다.";
+      }
+
+      return error && error.detail ? error.detail : error;
+    }
+
+    // 사용자 정보 표시 함수
+    function showUser(user) {
+      // 비로그인 상태 처리
+      if (!user) {
+        $("profile").hidden = true;
+        $("onboardingSection").hidden = true;
+        return;
+      }
+
+      const rows = [
+        ["ID", user.id],
+        ["이메일", user.email || "-"],
+        ["전화번호", user.phone_number || "-"],
+        ["카카오 ID", user.kakao_id || "-"],
+        ["로그인 타입", user.login_type],
+      ];
+
+      $("profile").innerHTML = rows
+        .map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`)
+        .join("");
+      $("profile").hidden = false;
+
+      // 전화번호 미등록 시 온보딩 영역 표시
+      $("onboardingSection").hidden = Boolean(user.phone_number);
+    }
+
+    // 백엔드 API 호출 함수
+    async function callApi(path, options = {}) {
+      // 저장된 JWT를 Authorization 헤더에 추가
+      const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      };
+      const token = localStorage.getItem(tokenKey);
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${getApiBase()}${path}`, {
+        ...options,
+        headers,
+      });
+      const text = await response.text();
+      const body = text ? JSON.parse(text) : null;
+
+      if (!response.ok) {
+        throw body || { status: response.status, message: response.statusText };
+      }
+
+      return body;
+    }
+
+    // 현재 사용자 정보 조회 함수
+    async function loadMe() {
+      // 현재 로그인 사용자 재조회
+      const token = localStorage.getItem(tokenKey);
+      if (!token) {
+        setStatus("저장된 토큰이 없습니다. 카카오 로그인을 시작하세요.");
+        showUser(null);
+        return;
+      }
+
+      try {
+        const user = await callApi("/users/me");
+        setStatus("JWT 인증 성공: 내 정보를 불러왔습니다.", "success");
+        showUser(user);
+        showDebug(user);
+      } catch (error) {
+        setStatus("JWT 인증 실패: 다시 로그인하세요.", "error");
+        showDebug(error);
+      }
+    }
+
+    // 카카오 로그인 콜백 처리 함수
+    async function handleKakaoCallback() {
+      // 카카오 redirect 후 code 파라미터 처리
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const error = params.get("error");
+
+      if (error) {
+        setStatus(`카카오 로그인 실패: ${error}`, "error");
+        showDebug(Object.fromEntries(params.entries()));
+        return;
+      }
+
+      if (!code) {
+        await loadMe();
+        return;
+      }
+
+      setStatus("카카오 인가 코드를 받았습니다. 백엔드에서 토큰을 발급받는 중입니다.");
+
+      try {
+        // 인가 code로 FreshMate JWT 발급 요청
+        const callbackParams = new URLSearchParams({
+          code,
+          redirect_uri: getRedirectUri(),
+        });
+        const data = await callApi(`/auth/kakao/callback?${callbackParams.toString()}`);
+        localStorage.setItem(tokenKey, data.access_token);
+        setStatus("카카오 로그인 성공: JWT가 저장되었습니다.", "success");
+        showUser(data.user);
+        showDebug(data);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (callbackError) {
+        setStatus("백엔드 토큰 발급 실패", "error");
+        showDebug(getErrorMessage(callbackError));
+      }
+    }
+
+    $("loginButton").addEventListener("click", () => {
+      // 카카오 로그인 시작
+      const loginParams = new URLSearchParams({ redirect_uri: getRedirectUri() });
+      window.location.href = `${getApiBase()}/auth/kakao/login?${loginParams.toString()}`;
+    });
+
+    $("meButton").addEventListener("click", loadMe);
+
+    $("logoutButton").addEventListener("click", () => {
+      // 테스트 화면용 토큰 삭제
+      localStorage.removeItem(tokenKey);
+      setStatus("토큰을 삭제했습니다.");
+      showUser(null);
+      showDebug("로그아웃 상태입니다.");
+    });
+
+    $("localSignupButton").addEventListener("click", async () => {
+      // 일반 회원가입 요청
+      const payload = {
+        username: $("localUsername").value.trim(),
+        password: $("localPassword").value,
+        phone_number: $("localPhoneNumber").value.trim(),
+      };
+      const email = $("localEmail").value.trim();
+      if (email) payload.email = email;
+
+      try {
+        const data = await callApi("/auth/signup", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        localStorage.setItem(tokenKey, data.access_token);
+        setStatus("일반 회원가입 성공: JWT가 저장되었습니다.", "success");
+        showUser(data.user);
+        showDebug(data);
+      } catch (error) {
+        setStatus("일반 회원가입 실패", "error");
+        showDebug(error);
+      }
+    });
+
+    $("localLoginButton").addEventListener("click", async () => {
+      // 일반 로그인 요청
+      const payload = {
+        username: $("localUsername").value.trim(),
+        password: $("localPassword").value,
+      };
+
+      try {
+        const data = await callApi("/auth/login", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        localStorage.setItem(tokenKey, data.access_token);
+        setStatus("일반 로그인 성공: JWT가 저장되었습니다.", "success");
+        showUser(data.user);
+        showDebug(data);
+      } catch (error) {
+        setStatus("일반 로그인 실패", "error");
+        showDebug(error);
+      }
+    });
+
+    $("locationButton").addEventListener("click", () => {
+      // 브라우저 위치 권한으로 위도/경도 입력
+      if (!navigator.geolocation) {
+        setStatus("이 브라우저에서는 위치 정보를 가져올 수 없습니다.", "error");
+        showDebug("Geolocation API를 지원하지 않는 브라우저입니다.");
+        return;
+      }
+
+      setStatus("브라우저 위치 권한을 확인하는 중입니다.");
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          $("latitude").value = position.coords.latitude.toFixed(7);
+          $("longitude").value = position.coords.longitude.toFixed(7);
+          setStatus("현재 위치를 가져왔습니다.", "success");
+          showDebug({
+            latitude: Number($("latitude").value),
+            longitude: Number($("longitude").value),
+            accuracy_meters: position.coords.accuracy,
+          });
+        },
+        (error) => {
+          setStatus("현재 위치를 가져오지 못했습니다.", "error");
+          if (error.code === error.PERMISSION_DENIED) {
+            showDebug([
+              "브라우저 위치 권한이 거부되어 있습니다.",
+              "주소창의 사이트 권한에서 위치를 허용한 뒤 다시 눌러주세요.",
+              "위치 입력은 필수가 아니므로 전화번호만 저장해도 됩니다.",
+            ].join("\n"));
+            return;
+          }
+          if (error.code === error.POSITION_UNAVAILABLE) {
+            showDebug("현재 위치를 확인할 수 없습니다. 네트워크 또는 위치 서비스를 확인해주세요.");
+            return;
+          }
+          if (error.code === error.TIMEOUT) {
+            showDebug("위치 확인 시간이 초과되었습니다. 다시 시도해주세요.");
+            return;
+          }
+          showDebug(error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    });
+
+    $("onboardingButton").addEventListener("click", async () => {
+      // 입력된 온보딩 값만 전송
+      const payload = {};
+      const phoneNumber = $("phoneNumber").value.trim();
+      const latitude = $("latitude").value.trim();
+      const longitude = $("longitude").value.trim();
+
+      if (phoneNumber) payload.phone_number = phoneNumber;
+      if (latitude) payload.latitude = Number(latitude);
+      if (longitude) payload.longitude = Number(longitude);
+
+      try {
+        const user = await callApi("/auth/onboarding", {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        setStatus("온보딩 정보가 저장되었습니다.", "success");
+        showUser(user);
+        showDebug(user);
+      } catch (error) {
+        setStatus("온보딩 저장 실패", "error");
+        showDebug(error);
+      }
+    });
+
+    if (isHttpPage()) {
+      $("apiBase").value = window.location.origin;
+      $("apiBase").disabled = true;
+    }
+
+    handleKakaoCallback();
+  </script>
+</body>
+</html>

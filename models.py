@@ -16,7 +16,7 @@ class User(Base):
     
     # 3. 공통 정보
     email = Column(String, unique=True, nullable=True)  #이메일
-    phone_number = Column(String, unique=True, nullable=False)  #전화번호 (사용자 번호, 필수)
+    phone_number = Column(String, unique=True, nullable=True)  #전화번호 (온보딩에서 입력 가능)
     latitude = Column(Float, nullable=True)  #사용자 위도 (지역 기반 나눔용)
     longitude = Column(Float, nullable=True)  #사용자 경도 (지역 기반 나눔용)
     is_away_mode = Column(Boolean, default=False)  #외출 모드 활성화 여부
