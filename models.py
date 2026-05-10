@@ -18,6 +18,8 @@ class User(Base):
     real_name = Column(String, nullable=False)
     nickname = Column(String, unique=True, index=True, nullable=False)
 
+    password = Column(String, nullable=False)  # 비밀번호
+
     # 사용자가 누적한 전체 공부 시간(초 단위)
     total_study_time = Column(Integer, default=0)
     # 사용자의 연속 출석 일수 또는 인증 성공 연속일
