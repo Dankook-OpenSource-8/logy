@@ -18,6 +18,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def get_db():
+    # 요청마다 DB 세션을 열고 응답 후 안전하게 닫습니다.
     db = SessionLocal()
     try:
         yield db

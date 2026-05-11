@@ -36,3 +36,20 @@ class AuthResponse(BaseModel):
 class NicknameCheckResponse(BaseModel):
     nickname: str
     available: bool
+
+
+class StudySessionStartRequest(BaseModel):
+    subject: str | None = Field(default=None, max_length=100)
+    goal_note: str | None = Field(default=None, max_length=500)
+    period_minutes: int = Field(default=60, ge=1, le=240)
+
+
+class StudySessionStartResponse(BaseModel):
+    message: str
+    study_session_id: int
+    next_auth_time: datetime
+
+
+class VideoUploadResponse(BaseModel):
+    message: str
+    video_url: str

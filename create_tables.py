@@ -1,6 +1,6 @@
 # create_tables.py
-from database import engine, Base
-import models  # models.py의 내용을 인식하기 위해 가져옵니다.
+from db.database import engine, Base
+from db import models  # models.py의 내용을 인식하기 위해 가져옵니다.
 
 def create_database():
     print("데이터베이스 연결 및 테이블 생성을 시작합니다.")

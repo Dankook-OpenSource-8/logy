@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from database import Base
+from db.database import Base
 import enum
 
 # 1. 공부 세션 상태 (이미지의 active, completed, cancelled 반영)
