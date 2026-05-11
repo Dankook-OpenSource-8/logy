@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models import User
+from db.database import get_db
+from db.models import User
 
 load_dotenv()
 
@@ -21,15 +21,18 @@ PASSWORD_HASH_ITERATIONS = int(os.getenv("PASSWORD_HASH_ITERATIONS", "260000"))
 
 
 def _b64encode(value: bytes) -> str:
+    # 토큰과 해시 구성요소를 URL-safe base64 문자열로 변환합니다.
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("utf-8")
 
 
 def _b64decode(value: str) -> bytes:
+    # padding이 제거된 URL-safe base64 문자열을 다시 bytes로 복원합니다.
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
 
 
 def _sign(payload: str) -> str:
+    # 토큰 payload를 서버 secret으로 서명합니다.
     digest = hmac.new(
         SECRET_KEY.encode("utf-8"),
         payload.encode("utf-8"),
@@ -39,6 +42,7 @@ def _sign(payload: str) -> str:
 
 
 def hash_password(password: str) -> str:
+    # 가입 시 비밀번호 원문 대신 저장할 PBKDF2 해시 문자열을 만듭니다.
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -53,6 +57,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    # 로그인 시 입력 비밀번호와 DB 해시값이 일치하는지 비교합니다.
     try:
         algorithm, iterations, encoded_salt, encoded_digest = password_hash.split("$", 3)
         if algorithm != "pbkdf2_sha256":
@@ -72,6 +77,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_access_token(user_id: int) -> str:
+    # 로그인 성공 후 사용할 간단한 서명 토큰을 생성합니다.
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
@@ -85,6 +91,7 @@ def create_access_token(user_id: int) -> str:
 
 
 def verify_access_token(token: str) -> int:
+    # Authorization 헤더의 토큰을 검증하고 user_id를 추출합니다.
     try:
         encoded_payload, signature = token.split(".", 1)
         expected_signature = _sign(encoded_payload)
@@ -108,6 +115,7 @@ def get_current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> User:
+    # 보호 API에서 현재 로그인한 사용자를 DB에서 조회합니다.
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
