@@ -1,9 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+
+from fastapi.security import HTTPBearer
 
 from api.routes import router
 
 app = FastAPI(title="Logy Backend")
+
+security = HTTPBearer()
 
 # 프론트엔드에서 백엔드 API를 호출할 수 있도록 CORS를 허용합니다.
 app.add_middleware(
@@ -16,3 +20,10 @@ app.add_middleware(
 
 # 분리된 API 라우터를 FastAPI 앱에 연결합니다.
 app.include_router(router)
+
+@app.get("/auth-test", tags=["Test"])
+def test_authorization(token=Depends(security)):
+    return {
+        "message": "Swagger 인증 설정 성공!", 
+        "your_token": token.credentials
+    }
