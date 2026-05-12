@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -76,7 +77,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: str) -> str:
     # 로그인 성공 후 사용할 간단한 서명 토큰을 생성합니다.
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
@@ -90,7 +91,7 @@ def create_access_token(user_id: int) -> str:
     return f"{encoded_payload}.{signature}"
 
 
-def verify_access_token(token: str) -> int:
+def verify_access_token(token: str) -> str:
     # Authorization 헤더의 토큰을 검증하고 user_id를 추출합니다.
     try:
         encoded_payload, signature = token.split(".", 1)
@@ -103,37 +104,33 @@ def verify_access_token(token: str) -> int:
         if expires_at < int(datetime.now(timezone.utc).timestamp()):
             raise ValueError("expired token")
 
-        return int(payload["sub"])
+        return str(payload["sub"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 인증 토큰입니다",
         ) from None
 
+security = HTTPBearer()
 
 def get_current_user(
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-) -> User:
-    # 보호 API에서 현재 로그인한 사용자를 DB에서 조회합니다.
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="인증 토큰이 필요합니다",
-        )
+):
+    """
+    보호 API에서 현재 로그인한 사용자를 DB에서 조회합니다.
+    """
+    # 2. HTTPBearer가 토큰 유무 & Bearer 형식을 다 검사해주므로 바로 토큰만 뽑아씁니다.
+    token = credentials.credentials
 
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Bearer 토큰 형식이 아닙니다",
-        )
-
+    # 3. 기존 토큰 검증 로직
     user_id = verify_access_token(token)
     user = db.query(User).filter(User.id == user_id).first()
+    
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="사용자를 찾을 수 없습니다",
         )
+        
     return user

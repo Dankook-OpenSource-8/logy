@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from db.database import Base
 import enum
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
 
 # 1. 공부 세션 상태 (이미지의 active, completed, cancelled 반영)
 class SessionStatus(enum.Enum):
@@ -14,7 +16,7 @@ class SessionStatus(enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     real_name = Column(String, nullable=False)
     nickname = Column(String, unique=True, index=True, nullable=False)
 
@@ -31,13 +33,13 @@ class User(Base):
 
     sessions = relationship("StudySession", back_populates="owner", cascade="all, delete-orphan")
     auth_logs = relationship("AuthLog", back_populates="owner", cascade="all, delete-orphan")
-
+    
 # 3. 공부 세션 테이블 (이미지의 end_time, status, next_auth_time 반영)
 class StudySession(Base):
     __tablename__ = "study_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
 
     # 사용자가 이 세션에서 선택한 과목 이름 또는 세션 제목
     subject = Column(String, nullable=True)
@@ -70,7 +72,7 @@ class AuthLog(Base):
     __tablename__ = "auth_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     # 어느 세션인지 명확히 연결!
     study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
 
