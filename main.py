@@ -33,6 +33,17 @@ def _normalize(value: str) -> str:
     return value.strip()
 
 
+def _is_duplicate_nickname_error(error: IntegrityError) -> bool:
+    original_error = error.orig
+    sqlstate = getattr(original_error, "pgcode", None) or getattr(original_error, "sqlstate", None)
+    error_message = str(original_error).lower()
+
+    if sqlstate == "23505":
+        return "nickname" in error_message or "users_nickname" in error_message
+
+    return "unique" in error_message and "nickname" in error_message
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -94,11 +105,17 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)) -> User:
 
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.rollback()
+        if _is_duplicate_nickname_error(error):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="중복된 닉네임입니다",
+            ) from None
+
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="중복된 닉네임입니다",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="회원가입 처리 중 데이터베이스 오류가 발생했습니다",
         ) from None
 
     db.refresh(user)
