@@ -7,10 +7,18 @@ from sqlalchemy.orm import Session
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
 from core.storage import upload_video
 from db.database import get_db
-from db.models import AuthLog, StudySession, User
+from db.models import AuthLog, FocusInterruption, SessionStatus, StudySession, User, UserPushToken
 from schemas import (
+    ActiveStudySessionResponse,
     AuthResponse,
+    FocusInterruptionCreateRequest,
+    FocusInterruptionResponse,
     NicknameCheckResponse,
+    PushTokenRegisterRequest,
+    PushTokenRegisterResponse,
+    StudySessionCompleteRequest,
+    StudySessionCompleteResponse,
+    StudySessionResponse,
     StudySessionStartRequest,
     StudySessionStartResponse,
     UserLoginRequest,
@@ -37,6 +45,41 @@ def _is_duplicate_nickname_error(error: IntegrityError) -> bool:
         return "nickname" in error_message or "users_nickname" in error_message
 
     return "unique" in error_message and "nickname" in error_message
+
+
+def _study_session_response(study_session: StudySession) -> StudySessionResponse:
+    return StudySessionResponse(
+        id=study_session.id,
+        subject=study_session.subject,
+        goal_note=study_session.goal_note,
+        start_time=study_session.start_time,
+        end_time=study_session.end_time,
+        total_seconds=study_session.total_seconds,
+        status=study_session.status.value,
+        period_minutes=study_session.period_minutes,
+        next_auth_time=study_session.next_auth_time,
+        is_paused=study_session.is_paused,
+        last_paused_at=study_session.last_paused_at,
+    )
+
+
+def _video_extension(content_type: str, filename: str | None) -> str:
+    normalized_content_type = content_type.split(";", 1)[0].strip().lower()
+    extensions_by_content_type = {
+        "video/webm": ".webm",
+        "video/mp4": ".mp4",
+        "video/quicktime": ".mov",
+        "video/x-m4v": ".m4v",
+    }
+    if normalized_content_type in extensions_by_content_type:
+        return extensions_by_content_type[normalized_content_type]
+
+    if filename and "." in filename:
+        extension = filename.rsplit(".", 1)[-1].lower()
+        if extension in {"webm", "mp4", "mov", "m4v"}:
+            return f".{extension}"
+
+    return ".mp4"
 
 
 @router.get("/health")
@@ -157,32 +200,232 @@ def logout() -> dict[str, str]:
     return {"message": "로그아웃 성공"}
 
 
+@router.post("/users/push-token", response_model=PushTokenRegisterResponse)
+def register_push_token(
+    payload: PushTokenRegisterRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PushTokenRegisterResponse:
+    # Expo 앱 푸시 토큰을 저장해 인증 알림과 팀원 알림에 사용합니다.
+    expo_push_token = payload.expo_push_token.strip()
+    if not expo_push_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="푸시 토큰을 입력해주세요",
+        )
+
+    push_token = (
+        db.query(UserPushToken)
+        .filter(UserPushToken.expo_push_token == expo_push_token)
+        .first()
+    )
+    if push_token is None:
+        push_token = UserPushToken(
+            user_id=current_user.id,
+            expo_push_token=expo_push_token,
+        )
+        db.add(push_token)
+    else:
+        push_token.user_id = current_user.id
+
+    push_token.platform = payload.platform.strip() if payload.platform else None
+    push_token.is_active = True
+
+    try:
+        db.commit()
+        db.refresh(push_token)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="푸시 토큰 저장 중 중복 오류가 발생했습니다",
+        ) from None
+
+    return PushTokenRegisterResponse(
+        message="푸시 토큰 저장",
+        push_token_id=push_token.id,
+    )
+
+
 @router.post("/study-sessions/start", response_model=StudySessionStartResponse)
 def start_study_session(
     payload: StudySessionStartRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StudySessionStartResponse:
-    # 공부 시작 시 세션 row를 만들고 이후 영상 업로드에 쓸 id를 반환합니다.
-    now = datetime.now(timezone.utc)
-    next_auth_time = now + timedelta(minutes=payload.period_minutes)
-
+    # 공부 시작 시 DB 서버가 찍은 start_time을 기준으로 세션 row를 먼저 확정합니다.
     study_session = StudySession(
         user_id=current_user.id,
         subject=payload.subject.strip() if payload.subject else None,
         goal_note=payload.goal_note.strip() if payload.goal_note else None,
-        start_time=now,
         period_minutes=payload.period_minutes,
-        next_auth_time=next_auth_time,
     )
     db.add(study_session)
-    db.commit()
-    db.refresh(study_session)
+
+    try:
+        db.flush()
+        db.refresh(study_session)
+        if study_session.start_time is None:
+            raise RuntimeError("study session start_time was not generated")
+
+        next_auth_time = study_session.start_time + timedelta(minutes=payload.period_minutes)
+        study_session.next_auth_time = next_auth_time
+        db.commit()
+        db.refresh(study_session)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="공부 세션 시작 시각을 기록하지 못했습니다",
+        ) from None
 
     return StudySessionStartResponse(
         message="공부 세션 시작",
         study_session_id=study_session.id,
-        next_auth_time=next_auth_time,
+        start_time=study_session.start_time,
+        next_auth_time=study_session.next_auth_time,
+    )
+
+
+@router.get("/study-sessions/active", response_model=ActiveStudySessionResponse)
+def get_active_study_session(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ActiveStudySessionResponse:
+    # 앱 재실행/화면 복귀 시 현재 진행 중인 세션을 복구합니다.
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.user_id == current_user.id,
+            StudySession.status == SessionStatus.active,
+        )
+        .order_by(StudySession.start_time.desc())
+        .first()
+    )
+
+    return ActiveStudySessionResponse(
+        active_session=_study_session_response(study_session) if study_session else None
+    )
+
+
+@router.post(
+    "/study-sessions/{study_session_id}/complete",
+    response_model=StudySessionCompleteResponse,
+)
+def complete_study_session(
+    study_session_id: int,
+    payload: StudySessionCompleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StudySessionCompleteResponse:
+    # 앱에서 정상 종료한 순공 시간을 서버에 확정 저장합니다.
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.id == study_session_id,
+            StudySession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if study_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공부 세션을 찾을 수 없습니다",
+        )
+    if study_session.status != SessionStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="진행 중인 공부 세션만 완료할 수 있습니다",
+        )
+
+    study_session.status = SessionStatus.completed
+    study_session.end_time = datetime.now(timezone.utc)
+    study_session.total_seconds = payload.total_seconds
+    study_session.is_paused = False
+    study_session.last_paused_at = None
+
+    current_user.total_study_time = (current_user.total_study_time or 0) + payload.total_seconds
+
+    try:
+        db.commit()
+        db.refresh(study_session)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="공부 세션 완료 처리에 실패했습니다",
+        ) from None
+
+    return StudySessionCompleteResponse(
+        message="공부 세션 완료",
+        study_session=_study_session_response(study_session),
+    )
+
+
+@router.post(
+    "/study-sessions/{study_session_id}/focus-interruptions",
+    response_model=FocusInterruptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_focus_interruption(
+    study_session_id: int,
+    payload: FocusInterruptionCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FocusInterruptionResponse:
+    # 포커스 이탈은 서버 수신 시각을 기준으로 기록해 클라이언트 시간 조작 영향을 줄입니다.
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.id == study_session_id,
+            StudySession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if study_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공부 세션을 찾을 수 없습니다",
+        )
+
+    focus_interruption = FocusInterruption(
+        user_id=current_user.id,
+        study_session_id=study_session.id,
+        event_type=payload.event_type.strip(),
+        client_event_at=payload.client_event_at,
+        grace_seconds=payload.grace_seconds,
+        penalty_applied=payload.penalty_applied,
+    )
+    if not focus_interruption.event_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이탈 이벤트 종류를 입력해주세요",
+        )
+
+    if payload.penalty_applied:
+        study_session.status = SessionStatus.failed
+        study_session.end_time = datetime.now(timezone.utc)
+
+    db.add(focus_interruption)
+
+    try:
+        db.commit()
+        db.refresh(focus_interruption)
+        db.refresh(study_session)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="이탈 로그를 저장하지 못했습니다",
+        ) from None
+
+    return FocusInterruptionResponse(
+        message="이탈 로그 기록",
+        focus_interruption_id=focus_interruption.id,
+        study_session_id=study_session.id,
+        interrupted_at=focus_interruption.interrupted_at,
+        penalty_applied=focus_interruption.penalty_applied,
+        session_status=study_session.status.value,
     )
 
 
@@ -208,7 +451,7 @@ async def upload_auth_video(
             detail="공부 세션을 찾을 수 없습니다",
         )
 
-    content_type = video.content_type or "video/webm"
+    content_type = video.content_type or "video/mp4"
     if not content_type.startswith("video/"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -223,7 +466,7 @@ async def upload_auth_video(
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-    file_path = f"{current_user.id}_{timestamp}.webm"
+    file_path = f"{current_user.id}_{timestamp}{_video_extension(content_type, video.filename)}"
     video_url = upload_video(file_path, file_bytes, content_type)
 
     auth_log = AuthLog(
