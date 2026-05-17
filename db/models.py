@@ -11,6 +11,7 @@ class SessionStatus(enum.Enum):
     active = "active"
     completed = "completed"
     cancelled = "cancelled"
+    failed = "failed"
 
 # 2. 사용자 정보 테이블 (이미지의 created_at, updated_at 반영)
 class User(Base):
@@ -33,6 +34,8 @@ class User(Base):
 
     sessions = relationship("StudySession", back_populates="owner", cascade="all, delete-orphan")
     auth_logs = relationship("AuthLog", back_populates="owner", cascade="all, delete-orphan")
+    focus_interruptions = relationship("FocusInterruption", back_populates="owner", cascade="all, delete-orphan")
+    push_tokens = relationship("UserPushToken", back_populates="owner", cascade="all, delete-orphan")
     
 # 3. 공부 세션 테이블 (이미지의 end_time, status, next_auth_time 반영)
 class StudySession(Base):
@@ -66,8 +69,46 @@ class StudySession(Base):
 
     owner = relationship("User", back_populates="sessions")
     auth_logs = relationship("AuthLog", back_populates="session", cascade="all, delete-orphan")
+    focus_interruptions = relationship("FocusInterruption", back_populates="session", cascade="all, delete-orphan")
 
-# 4. 인증 로그 테이블 (이미지의 study_session_id 연결 반영)
+
+# 4. 앱 포커스 이탈 로그 테이블
+class FocusInterruption(Base):
+    __tablename__ = "focus_interruptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+
+    # 앱에서 감지한 이벤트 종류: app_background, app_inactive, grace_timeout 등
+    event_type = Column(String, nullable=False)
+    # 클라이언트가 참고용으로 보낸 감지 시각입니다. 판정 기준은 서버 시각을 사용합니다.
+    client_event_at = Column(DateTime(timezone=True), nullable=True)
+    # 서버가 이탈 로그를 수신한 시각입니다.
+    interrupted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # 프론트가 적용한 복귀 유예 시간(초)
+    grace_seconds = Column(Integer, default=3, nullable=False)
+    # 3초 내 복귀 실패 등으로 패널티가 확정되었는지 여부
+    penalty_applied = Column(Boolean, default=False, nullable=False)
+
+    owner = relationship("User", back_populates="focus_interruptions")
+    session = relationship("StudySession", back_populates="focus_interruptions")
+
+# 5. Expo 앱 푸시 알림 토큰 테이블
+class UserPushToken(Base):
+    __tablename__ = "user_push_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    expo_push_token = Column(String, unique=True, index=True, nullable=False)
+    platform = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="push_tokens")
+
+# 6. 인증 로그 테이블 (이미지의 study_session_id 연결 반영)
 class AuthLog(Base):
     __tablename__ = "auth_logs"
 
