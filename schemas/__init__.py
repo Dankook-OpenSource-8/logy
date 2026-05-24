@@ -14,6 +14,9 @@ from schemas.user import (
     UserLoginRequest,
     UserResponse,
     UserSignupRequest,
+    VideoVerificationRequest,
+    VideoVerificationResponse,
+    VideoVerificationResultResponse,
     VideoUploadResponse,
 )
 
@@ -33,5 +36,8 @@ __all__ = [
     "UserLoginRequest",
     "UserResponse",
     "UserSignupRequest",
+    "VideoVerificationRequest",
+    "VideoVerificationResponse",
+    "VideoVerificationResultResponse",
     "VideoUploadResponse",
 ]

@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from core.ai_video_verification import verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
 from core.storage import upload_video
-from db.database import get_db
+from db.database import SessionLocal, get_db
 from db.models import AuthLog, FocusInterruption, SessionStatus, StudySession, User, UserPushToken
 from schemas import (
     ActiveStudySessionResponse,
@@ -24,6 +25,9 @@ from schemas import (
     UserLoginRequest,
     UserResponse,
     UserSignupRequest,
+    VideoVerificationRequest,
+    VideoVerificationResponse,
+    VideoVerificationResultResponse,
     VideoUploadResponse,
 )
 
@@ -80,6 +84,73 @@ def _video_extension(content_type: str, filename: str | None) -> str:
             return f".{extension}"
 
     return ".mp4"
+
+
+def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
+    return VideoVerificationResultResponse(
+        auth_log_id=auth_log.id,
+        study_session_id=auth_log.study_session_id,
+        status=auth_log.status,
+        video_url=auth_log.video_url,
+        verification_score=auth_log.verification_score,
+        verification_reason=auth_log.verification_reason,
+        scene_score=auth_log.scene_score,
+        text_score=auth_log.text_score,
+        quality_score=auth_log.quality_score,
+        forbidden_penalty=auth_log.forbidden_penalty,
+        representative_frame_path=auth_log.representative_frame_path,
+        created_at=auth_log.created_at,
+        verified_at=auth_log.verified_at,
+    )
+
+
+def _run_video_verification(auth_log_id: int) -> None:
+    db = SessionLocal()
+    try:
+        auth_log = db.query(AuthLog).filter(AuthLog.id == auth_log_id).first()
+        if auth_log is None:
+            return
+
+        study_session = (
+            db.query(StudySession)
+            .filter(StudySession.id == auth_log.study_session_id)
+            .first()
+        )
+        if study_session is None:
+            auth_log.status = "실패"
+            auth_log.error_message = "공부 세션을 찾을 수 없습니다"
+            auth_log.verified_at = datetime.now(timezone.utc)
+            db.commit()
+            return
+
+        try:
+            result = verify_study_video(auth_log.video_url, study_session.subject)
+        except Exception as error:
+            auth_log.status = "시간초과"
+            auth_log.error_message = str(error)
+            auth_log.verification_reason = "AI 영상 검증 중 오류가 발생했습니다."
+            auth_log.verified_at = datetime.now(timezone.utc)
+            db.commit()
+            return
+
+        auth_log.status = result.status
+        auth_log.verification_score = result.total_score
+        auth_log.verification_reason = result.reason
+        auth_log.scene_score = result.scene_score
+        auth_log.text_score = result.text_score
+        auth_log.quality_score = result.quality_score
+        auth_log.forbidden_penalty = result.forbidden_penalty
+        auth_log.representative_frame_path = result.representative_frame_path
+        auth_log.verified_at = datetime.now(timezone.utc)
+        auth_log.error_message = None if result.approved else result.reason
+
+        if not result.approved:
+            study_session.status = SessionStatus.failed
+            study_session.end_time = datetime.now(timezone.utc)
+
+        db.commit()
+    finally:
+        db.close()
 
 
 @router.get("/health")
@@ -427,6 +498,82 @@ def create_focus_interruption(
         penalty_applied=focus_interruption.penalty_applied,
         session_status=study_session.status.value,
     )
+
+
+@router.post("/auth/video/verify", response_model=VideoVerificationResponse)
+def request_video_verification(
+    payload: VideoVerificationRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> VideoVerificationResponse:
+    # 앱이 Supabase Storage에 직접 올린 영상 URL을 받아 AI 검증을 비동기로 시작합니다.
+    video_url = payload.video_url.strip()
+    if not video_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="영상 URL을 입력해주세요",
+        )
+
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.id == payload.study_session_id,
+            StudySession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if study_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공부 세션을 찾을 수 없습니다",
+        )
+
+    auth_log = AuthLog(
+        user_id=current_user.id,
+        study_session_id=study_session.id,
+        video_url=video_url,
+        status="대기",
+        verification_reason="AI 영상 검증 대기 중입니다.",
+    )
+    db.add(auth_log)
+    db.commit()
+    db.refresh(auth_log)
+
+    background_tasks.add_task(_run_video_verification, auth_log.id)
+
+    return VideoVerificationResponse(
+        message="영상 검증 요청 접수",
+        auth_log_id=auth_log.id,
+        status=auth_log.status,
+    )
+
+
+@router.get(
+    "/auth/video/verify/{auth_log_id}",
+    response_model=VideoVerificationResultResponse,
+)
+def get_video_verification_result(
+    auth_log_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> VideoVerificationResultResponse:
+    # 프론트가 pending 이후 polling으로 AI 검증 결과를 조회할 때 사용합니다.
+    auth_log = (
+        db.query(AuthLog)
+        .filter(
+            AuthLog.id == auth_log_id,
+            AuthLog.user_id == current_user.id,
+        )
+        .first()
+    )
+    if auth_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="영상 검증 로그를 찾을 수 없습니다",
+        )
+
+    return _verification_result_response(auth_log)
 
 
 @router.post("/auth/video", response_model=VideoUploadResponse)

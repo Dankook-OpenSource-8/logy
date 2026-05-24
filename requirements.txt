@@ -6,3 +6,9 @@ pydantic==2.13.3
 python-dotenv==1.2.1
 python-multipart
 supabase
+Pillow
+opencv-python
+torch
+transformers
+sentence-transformers
+easyocr

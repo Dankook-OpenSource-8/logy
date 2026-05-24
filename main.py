@@ -21,6 +21,7 @@ app.add_middleware(
 # 분리된 API 라우터를 FastAPI 앱에 연결합니다.
 app.include_router(router)
 
+
 @app.get("/auth-test", tags=["Test"])
 def test_authorization(token=Depends(security)):
     return {
