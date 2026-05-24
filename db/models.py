@@ -121,10 +121,19 @@ class AuthLog(Base):
     video_url = Column(String, nullable=False)
     # 인증 영상의 썸네일 URL을 저장할 경우
     thumbnail_url = Column(String, nullable=True)
-    # 인증 결과 상태 (성공, 실패, 시간초과)
-    status = Column(Enum("성공", "실패", "시간초과", name="auth_status"), nullable=False)
+    # 인증 결과 상태 (대기, 성공, 실패, 시간초과)
+    status = Column(Enum("대기", "성공", "실패", "시간초과", name="auth_status"), nullable=False)
     # 인증 처리 중 발생한 오류 메시지
     error_message = Column(String, nullable=True)
+    # AI 검증 총점과 세부 사유
+    verification_score = Column(Integer, nullable=True)
+    verification_reason = Column(Text, nullable=True)
+    scene_score = Column(Integer, nullable=True)
+    text_score = Column(Integer, nullable=True)
+    quality_score = Column(Integer, nullable=True)
+    forbidden_penalty = Column(Integer, nullable=True)
+    representative_frame_path = Column(String, nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
     # 같은 세션에서 인증 시도 횟수
     auth_attempt_count = Column(Integer, default=1)
 

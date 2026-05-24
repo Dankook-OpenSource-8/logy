@@ -101,6 +101,34 @@ class VideoUploadResponse(BaseModel):
     video_url: str
 
 
+class VideoVerificationRequest(BaseModel):
+    study_session_id: int = Field(..., ge=1)
+    video_url: str = Field(..., min_length=1, max_length=2048)
+    captured_at: datetime | None = None
+
+
+class VideoVerificationResponse(BaseModel):
+    message: str
+    auth_log_id: int
+    status: str
+
+
+class VideoVerificationResultResponse(BaseModel):
+    auth_log_id: int
+    study_session_id: int
+    status: str
+    video_url: str
+    verification_score: int | None
+    verification_reason: str | None
+    scene_score: int | None
+    text_score: int | None
+    quality_score: int | None
+    forbidden_penalty: int | None
+    representative_frame_path: str | None
+    created_at: datetime
+    verified_at: datetime | None
+
+
 class PushTokenRegisterRequest(BaseModel):
     expo_push_token: str = Field(..., min_length=1, max_length=255)
     platform: str | None = Field(default=None, max_length=20)
