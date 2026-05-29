@@ -97,6 +97,52 @@ class FocusInterruptionResponse(BaseModel):
     session_status: str
 
 
+class FocusRiskItem(BaseModel):
+    # 히트맵의 한 칸에 들어갈 요일/시간대별 분석 결과입니다.
+    dayOfWeek: int
+    hour: int
+    riskScore: float
+    riskLevel: str
+    failureRate: float
+    baselineDiff: float
+    totalAttempts: int
+    failedAttempts: int
+    reason: str
+
+
+class CollapsePredictionResponse(BaseModel):
+    # 경고 배너에서 바로 쓰는 집중 붕괴 예측 값입니다.
+    riskStartMinute: int | None
+    predictedCollapseMinute: int | None
+    riskLevel: str
+    message: str
+    sampleSize: int
+
+
+class FocusAnalyticsSummaryResponse(BaseModel):
+    # 차트를 보지 않아도 핵심 패턴을 읽을 수 있는 요약 정보입니다.
+    highestRiskDay: str | None
+    highestRiskHour: int | None
+    riskMultiplier: float
+    recommendation: str
+
+
+class FocusAnalyticsMetadataResponse(BaseModel):
+    # 프론트에서 빈 상태, 신뢰도 문구, 디버깅에 활용할 보조 지표입니다.
+    totalAttempts: int
+    failedAttempts: int
+    baselineFailureRate: float
+    recentFailureRate: float
+    isEnoughData: bool
+
+
+class FocusAnalyticsResponse(BaseModel):
+    riskMap: list[FocusRiskItem]
+    collapsePrediction: CollapsePredictionResponse
+    summary: FocusAnalyticsSummaryResponse
+    metadata: FocusAnalyticsMetadataResponse
+
+
 class VideoUploadResponse(BaseModel):
     message: str
     video_url: str

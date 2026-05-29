@@ -11,6 +11,7 @@ from core.random_auth_schedule import (
     is_auth_expired,
     weighted_auth_delay_minutes,
 )
+from core.focus_analytics import AnalyticsSession, build_focus_analytics
 from core.storage import upload_video
 from db.database import SessionLocal, get_db
 from db.models import AuthLog, FocusInterruption, SessionStatus, StudySession, User, UserPushToken
@@ -19,6 +20,7 @@ from schemas import (
     AuthResponse,
     FocusInterruptionCreateRequest,
     FocusInterruptionResponse,
+    FocusAnalyticsResponse,
     NicknameCheckResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
@@ -513,6 +515,31 @@ def create_focus_interruption(
         penalty_applied=focus_interruption.penalty_applied,
         session_status=study_session.status.value,
     )
+
+
+@router.get("/analytics/focus-risk", response_model=FocusAnalyticsResponse)
+def get_focus_risk_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    # 라우터는 DB 접근까지만 맡고, 점수 계산은 core 모듈에서 같은 기준으로 처리합니다.
+    study_sessions = (
+        db.query(StudySession)
+        .filter(StudySession.user_id == current_user.id)
+        .order_by(StudySession.start_time.desc())
+        .all()
+    )
+    analytics_sessions = [
+        AnalyticsSession(
+            start_time=study_session.start_time,
+            end_time=study_session.end_time,
+            status=study_session.status.value,
+            total_seconds=study_session.total_seconds,
+        )
+        for study_session in study_sessions
+        if study_session.start_time is not None
+    ]
+    return build_focus_analytics(analytics_sessions)
 
 
 @router.post("/auth/video/verify", response_model=VideoVerificationResponse)
