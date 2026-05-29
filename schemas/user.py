@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -141,6 +141,61 @@ class FocusAnalyticsResponse(BaseModel):
     collapsePrediction: CollapsePredictionResponse
     summary: FocusAnalyticsSummaryResponse
     metadata: FocusAnalyticsMetadataResponse
+
+
+class StudyArchiveAuthLogResponse(BaseModel):
+    authLogId: int
+    status: str
+    videoUrl: str
+    thumbnailUrl: str | None
+    verificationScore: int | None
+    verificationReason: str | None
+    createdAt: datetime
+    verifiedAt: datetime | None
+
+
+class StudyArchiveSessionResponse(BaseModel):
+    studySessionId: int
+    subject: str | None
+    goalNote: str | None
+    startTime: datetime
+    endTime: datetime | None
+    totalSeconds: int
+    status: str
+    authSuccessCount: int
+    authFailedCount: int
+    authPendingCount: int
+    authTimeoutCount: int
+    authLogs: list[StudyArchiveAuthLogResponse]
+
+
+class StudyArchiveDayResponse(BaseModel):
+    date: date
+    totalSeconds: int
+    sessionCount: int
+    completedCount: int
+    failedCount: int
+    authSuccessCount: int
+    authFailedCount: int
+    authPendingCount: int
+    authTimeoutCount: int
+    sessions: list[StudyArchiveSessionResponse]
+
+
+class StudyArchivePeriodResponse(BaseModel):
+    period: str
+    startDate: date
+    endDate: date
+    totalSeconds: int
+    sessionCount: int
+    completedCount: int
+    failedCount: int
+    authSuccessCount: int
+    authFailedCount: int
+    authPendingCount: int
+    authTimeoutCount: int
+    averageDailySeconds: int
+    days: list[StudyArchiveDayResponse]
 
 
 class VideoUploadResponse(BaseModel):
