@@ -3,3 +3,10 @@ venv/
 .env
 __pycache__/
 .DS_Store
+data/study_classifier/**/*.jpg
+data/study_classifier/**/*.jpeg
+data/study_classifier/**/*.png
+data/study_classifier/**/*.webp
+!data/study_classifier/**/.gitkeep
+models/*.pt
+!models/.gitkeep
