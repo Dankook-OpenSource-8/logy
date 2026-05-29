@@ -3,6 +3,7 @@ from schemas.user import (
     ActiveStudySessionResponse,
     FocusInterruptionCreateRequest,
     FocusInterruptionResponse,
+
     GroupCreateRequest,
     GroupInviteResponse,
     GroupJoinRequest,
@@ -13,6 +14,9 @@ from schemas.user import (
     GroupPokeCreateRequest,
     GroupPokeResponse,
     GroupResponse,
+
+    FocusAnalyticsResponse,
+
     NicknameCheckResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
@@ -45,6 +49,9 @@ __all__ = [
     "GroupPokeCreateRequest",
     "GroupPokeResponse",
     "GroupResponse",
+
+    "FocusAnalyticsResponse",
+
     "NicknameCheckResponse",
     "PushTokenRegisterRequest",
     "PushTokenRegisterResponse",
