@@ -6,6 +6,11 @@ from sqlalchemy.orm import Session
 
 from core.ai_video_verification import verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
+from core.random_auth_schedule import (
+    auth_expires_at,
+    is_auth_expired,
+    weighted_auth_delay_minutes,
+)
 from core.focus_analytics import AnalyticsSession, build_focus_analytics
 from core.storage import upload_video
 from db.database import SessionLocal, get_db
@@ -64,6 +69,9 @@ def _study_session_response(study_session: StudySession) -> StudySessionResponse
         status=study_session.status.value,
         period_minutes=study_session.period_minutes,
         next_auth_time=study_session.next_auth_time,
+        auth_expires_at=auth_expires_at(study_session.next_auth_time)
+        if study_session.next_auth_time
+        else None,
         is_paused=study_session.is_paused,
         last_paused_at=study_session.last_paused_at,
     )
@@ -135,6 +143,7 @@ def _run_video_verification(auth_log_id: int) -> None:
             db.commit()
             return
 
+        verified_at = datetime.now(timezone.utc)
         auth_log.status = result.status
         auth_log.verification_score = result.total_score
         auth_log.verification_reason = result.reason
@@ -143,12 +152,16 @@ def _run_video_verification(auth_log_id: int) -> None:
         auth_log.quality_score = result.quality_score
         auth_log.forbidden_penalty = result.forbidden_penalty
         auth_log.representative_frame_path = result.representative_frame_path
-        auth_log.verified_at = datetime.now(timezone.utc)
+        auth_log.verified_at = verified_at
         auth_log.error_message = None if result.approved else result.reason
 
-        if not result.approved:
+        if result.approved:
+            auth_delay_minutes = weighted_auth_delay_minutes()
+            study_session.period_minutes = auth_delay_minutes
+            study_session.next_auth_time = verified_at + timedelta(minutes=auth_delay_minutes)
+        else:
             study_session.status = SessionStatus.failed
-            study_session.end_time = datetime.now(timezone.utc)
+            study_session.end_time = verified_at
 
         db.commit()
     finally:
@@ -327,11 +340,12 @@ def start_study_session(
     db: Session = Depends(get_db),
 ) -> StudySessionStartResponse:
     # 공부 시작 시 DB 서버가 찍은 start_time을 기준으로 세션 row를 먼저 확정합니다.
+    auth_delay_minutes = weighted_auth_delay_minutes()
     study_session = StudySession(
         user_id=current_user.id,
         subject=payload.subject.strip() if payload.subject else None,
         goal_note=payload.goal_note.strip() if payload.goal_note else None,
-        period_minutes=payload.period_minutes,
+        period_minutes=auth_delay_minutes,
     )
     db.add(study_session)
 
@@ -341,7 +355,7 @@ def start_study_session(
         if study_session.start_time is None:
             raise RuntimeError("study session start_time was not generated")
 
-        next_auth_time = study_session.start_time + timedelta(minutes=payload.period_minutes)
+        next_auth_time = study_session.start_time + timedelta(minutes=auth_delay_minutes)
         study_session.next_auth_time = next_auth_time
         db.commit()
         db.refresh(study_session)
@@ -357,6 +371,7 @@ def start_study_session(
         study_session_id=study_session.id,
         start_time=study_session.start_time,
         next_auth_time=study_session.next_auth_time,
+        auth_expires_at=auth_expires_at(study_session.next_auth_time),
     )
 
 
@@ -555,6 +570,40 @@ def request_video_verification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="공부 세션을 찾을 수 없습니다",
         )
+    if study_session.next_auth_time is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증 요청 시간이 설정되지 않았습니다",
+        )
+
+    now = datetime.now(timezone.utc)
+    expires_at = auth_expires_at(study_session.next_auth_time)
+    if now < study_session.next_auth_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="아직 인증 요청 시간이 아닙니다",
+        )
+    if is_auth_expired(now, study_session.next_auth_time):
+        study_session.status = SessionStatus.failed
+        study_session.end_time = now
+        auth_log = AuthLog(
+            user_id=current_user.id,
+            study_session_id=study_session.id,
+            video_url=video_url,
+            status="시간초과",
+            error_message="인증 제한 시간 60초를 초과했습니다.",
+            verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
+            verified_at=now,
+        )
+        db.add(auth_log)
+        db.commit()
+        db.refresh(auth_log)
+        return VideoVerificationResponse(
+            message="인증 제한 시간이 초과되어 실패 처리되었습니다.",
+            auth_log_id=auth_log.id,
+            status=auth_log.status,
+            auth_expires_at=expires_at,
+        )
 
     auth_log = AuthLog(
         user_id=current_user.id,
@@ -573,6 +622,7 @@ def request_video_verification(
         message="영상 검증 요청 접수",
         auth_log_id=auth_log.id,
         status=auth_log.status,
+        auth_expires_at=expires_at,
     )
 
 
@@ -624,6 +674,26 @@ async def upload_auth_video(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="공부 세션을 찾을 수 없습니다",
         )
+    if study_session.next_auth_time is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증 요청 시간이 설정되지 않았습니다",
+        )
+
+    now = datetime.now(timezone.utc)
+    if now < study_session.next_auth_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="아직 인증 요청 시간이 아닙니다",
+        )
+    if is_auth_expired(now, study_session.next_auth_time):
+        study_session.status = SessionStatus.failed
+        study_session.end_time = now
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            detail="인증 제한 시간 60초를 초과했습니다",
+        )
 
     content_type = video.content_type or "video/mp4"
     if not content_type.startswith("video/"):
@@ -643,13 +713,4 @@ async def upload_auth_video(
     file_path = f"{current_user.id}_{timestamp}{_video_extension(content_type, video.filename)}"
     video_url = upload_video(file_path, file_bytes, content_type)
 
-    auth_log = AuthLog(
-        user_id=current_user.id,
-        study_session_id=study_session.id,
-        video_url=video_url,
-        status="성공",
-    )
-    db.add(auth_log)
-    db.commit()
-
-    return VideoUploadResponse(message="인증 성공", video_url=video_url)
+    return VideoUploadResponse(message="영상 업로드 완료", video_url=video_url)
