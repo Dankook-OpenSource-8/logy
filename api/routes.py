@@ -14,6 +14,15 @@ from core.random_auth_schedule import (
     weighted_auth_delay_minutes,
 )
 from core.focus_analytics import AnalyticsSession, build_focus_analytics
+from core.rewards import (
+    PET_EVOLUTION_STAGES,
+    attendance_reward,
+    furniture_progress_from_auth_minutes,
+    next_pet_stage,
+    pet_exp_from_verified_seconds,
+    pet_level_from_exp,
+    pet_stage_name,
+)
 from core.study_archive import (
     ArchiveAuthLog,
     ArchiveSession,
@@ -25,13 +34,19 @@ from core.storage import upload_video
 from db.database import SessionLocal, get_db
 from db.models import (
     AuthLog,
+    FurnitureItem,
+    FurniturePiece,
+    FurniturePlacement,
     FocusInterruption,
     GroupMember,
     GroupPokeLog,
+    RewardLedger,
     SessionStatus,
     StudyGroup,
     StudySession,
     User,
+    UserFurniturePieceProgress,
+    UserPet,
     UserPushToken,
 )
 from schemas import (
@@ -55,6 +70,10 @@ from schemas import (
     NicknameCheckResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
+    FurniturePlacementRequest,
+    FurniturePlacementResponse,
+    RewardSettlementResponse,
+    RewardStateResponse,
     StudyArchiveDayResponse,
     StudyArchivePeriodResponse,
     StudySessionCompleteRequest,
@@ -75,6 +94,14 @@ router = APIRouter()
 
 ONLINE_STATUSES = {"online", "offline"}
 STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "completed"}
+DEFAULT_FURNITURE_CODE = "desk"
+DEFAULT_FURNITURE_PIECES = [
+    ("leg_1", "책상 다리 1", 1),
+    ("leg_2", "책상 다리 2", 2),
+    ("leg_3", "책상 다리 3", 3),
+    ("leg_4", "책상 다리 4", 4),
+    ("top", "책상 상판", 5),
+]
 
 
 def _normalize(value: str) -> str:
@@ -309,6 +336,265 @@ def _empty_archive_day(archive_date: date) -> dict:
     }
 
 
+def _get_or_create_user_pet(db: Session, user: User) -> UserPet:
+    pet = db.query(UserPet).filter(UserPet.user_id == user.id).first()
+    if pet is None:
+        pet = UserPet(user_id=user.id)
+        db.add(pet)
+        db.flush()
+    return pet
+
+
+def _pet_response(pet: UserPet) -> dict:
+    next_stage = next_pet_stage(pet.total_exp)
+    return {
+        "petId": pet.id,
+        "name": pet.name,
+        "level": pet.level,
+        "stageName": pet_stage_name(pet.level),
+        "totalExp": pet.total_exp,
+        "nextLevel": next_stage,
+        "expToNextLevel": max((next_stage or {}).get("requiredExp", pet.total_exp) - pet.total_exp, 0),
+        "stages": PET_EVOLUTION_STAGES,
+    }
+
+
+def _get_or_create_default_furniture_catalog(db: Session) -> FurnitureItem:
+    furniture_item = (
+        db.query(FurnitureItem)
+        .filter(FurnitureItem.code == DEFAULT_FURNITURE_CODE)
+        .first()
+    )
+    if furniture_item is None:
+        furniture_item = FurnitureItem(
+            code=DEFAULT_FURNITURE_CODE,
+            name="책상",
+            total_piece_count=len(DEFAULT_FURNITURE_PIECES),
+        )
+        db.add(furniture_item)
+        db.flush()
+
+    existing_codes = {piece.code for piece in furniture_item.pieces}
+    for code, name, sort_order in DEFAULT_FURNITURE_PIECES:
+        if code not in existing_codes:
+            db.add(
+                FurniturePiece(
+                    furniture_item_id=furniture_item.id,
+                    code=code,
+                    name=name,
+                    sort_order=sort_order,
+                )
+            )
+    db.flush()
+    db.refresh(furniture_item)
+    return furniture_item
+
+
+def _piece_progress_by_id(db: Session, user_id, pieces: list[FurniturePiece]) -> dict[int, UserFurniturePieceProgress]:
+    progress_rows = (
+        db.query(UserFurniturePieceProgress)
+        .filter(
+            UserFurniturePieceProgress.user_id == user_id,
+            UserFurniturePieceProgress.furniture_piece_id.in_([piece.id for piece in pieces]),
+        )
+        .all()
+    )
+    progress_by_piece_id = {progress.furniture_piece_id: progress for progress in progress_rows}
+    for piece in pieces:
+        if piece.id not in progress_by_piece_id:
+            progress = UserFurniturePieceProgress(
+                user_id=user_id,
+                furniture_piece_id=piece.id,
+            )
+            db.add(progress)
+            db.flush()
+            progress_by_piece_id[piece.id] = progress
+    return progress_by_piece_id
+
+
+def _furniture_state(db: Session, user_id) -> list[dict]:
+    furniture_items = db.query(FurnitureItem).order_by(FurnitureItem.id.asc()).all()
+    if not furniture_items:
+        furniture_items = [_get_or_create_default_furniture_catalog(db)]
+
+    state = []
+    for furniture_item in furniture_items:
+        pieces = sorted(furniture_item.pieces, key=lambda piece: piece.sort_order)
+        progress_by_piece_id = _piece_progress_by_id(db, user_id, pieces)
+        piece_payloads = [
+            {
+                "furniturePieceId": piece.id,
+                "code": piece.code,
+                "name": piece.name,
+                "progressPercent": progress_by_piece_id[piece.id].progress_percent,
+                "completedCount": progress_by_piece_id[piece.id].completed_count,
+            }
+            for piece in pieces
+        ]
+        completed_piece_count = sum(1 for piece in piece_payloads if piece["completedCount"] > 0)
+        state.append(
+            {
+                "furnitureItemId": furniture_item.id,
+                "code": furniture_item.code,
+                "name": furniture_item.name,
+                "totalPieceCount": furniture_item.total_piece_count,
+                "completedPieceCount": completed_piece_count,
+                "isCompleted": completed_piece_count >= furniture_item.total_piece_count,
+                "pieces": piece_payloads,
+            }
+        )
+    return state
+
+
+def _placement_response(placement: FurniturePlacement) -> dict:
+    return {
+        "placementId": placement.id,
+        "furnitureItemId": placement.furniture_item_id,
+        "furnitureCode": placement.furniture_item.code,
+        "furnitureName": placement.furniture_item.name,
+        "placed": placement.placed,
+        "positionX": placement.position_x,
+        "positionY": placement.position_y,
+    }
+
+
+def _reward_state_response(db: Session, user: User) -> dict:
+    pet = _get_or_create_user_pet(db, user)
+    furniture = _furniture_state(db, user.id)
+    placements = (
+        db.query(FurniturePlacement)
+        .options(selectinload(FurniturePlacement.furniture_item))
+        .filter(FurniturePlacement.user_id == user.id)
+        .order_by(FurniturePlacement.id.asc())
+        .all()
+    )
+    return {
+        "pet": _pet_response(pet),
+        "furniture": furniture,
+        "placements": [_placement_response(placement) for placement in placements],
+    }
+
+
+def _current_furniture_piece_progress(
+    db: Session,
+    user_id,
+) -> UserFurniturePieceProgress | None:
+    furniture_item = _get_or_create_default_furniture_catalog(db)
+    pieces = sorted(furniture_item.pieces, key=lambda piece: piece.sort_order)
+    progress_by_piece_id = _piece_progress_by_id(db, user_id, pieces)
+    for piece in pieces:
+        progress = progress_by_piece_id[piece.id]
+        if progress.completed_count == 0:
+            return progress
+    return None
+
+
+def _ensure_completed_furniture_placement(db: Session, user_id) -> None:
+    furniture_item = _get_or_create_default_furniture_catalog(db)
+    pieces = sorted(furniture_item.pieces, key=lambda piece: piece.sort_order)
+    progress_by_piece_id = _piece_progress_by_id(db, user_id, pieces)
+    if any(progress_by_piece_id[piece.id].completed_count == 0 for piece in pieces):
+        return
+
+    existing_placement = (
+        db.query(FurniturePlacement)
+        .filter(
+            FurniturePlacement.user_id == user_id,
+            FurniturePlacement.furniture_item_id == furniture_item.id,
+        )
+        .first()
+    )
+    if existing_placement is None:
+        db.add(
+            FurniturePlacement(
+                user_id=user_id,
+                furniture_item_id=furniture_item.id,
+                placed=False,
+            )
+        )
+
+
+def _verified_seconds_for_auth(
+    db: Session,
+    auth_log: AuthLog,
+    study_session: StudySession,
+) -> int:
+    if auth_log.verified_at is None or study_session.start_time is None:
+        return 0
+
+    previous_success = (
+        db.query(AuthLog)
+        .filter(
+            AuthLog.study_session_id == study_session.id,
+            AuthLog.id != auth_log.id,
+            AuthLog.status == "성공",
+            AuthLog.verified_at.isnot(None),
+            AuthLog.verified_at < auth_log.verified_at,
+        )
+        .order_by(AuthLog.verified_at.desc())
+        .first()
+    )
+    started_at = previous_success.verified_at if previous_success else study_session.start_time
+    return max(int((auth_log.verified_at - started_at).total_seconds()), 0)
+
+
+def _settle_success_reward(
+    db: Session,
+    auth_log: AuthLog,
+    study_session: StudySession,
+    user: User,
+) -> RewardLedger:
+    existing_log = db.query(RewardLedger).filter(RewardLedger.auth_log_id == auth_log.id).first()
+    if existing_log is not None:
+        return existing_log
+    if auth_log.status != "성공":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="성공한 인증만 보상을 정산할 수 있습니다",
+        )
+
+    verified_seconds = _verified_seconds_for_auth(db, auth_log, study_session)
+    pet_exp = pet_exp_from_verified_seconds(verified_seconds)
+    attendance = attendance_reward(
+        user.last_attendance_date,
+        user.streak_days or 0,
+        auth_log.verified_at.date() if auth_log.verified_at else datetime.now(timezone.utc).date(),
+    )
+
+    pet = _get_or_create_user_pet(db, user)
+    pet.total_exp += pet_exp + attendance.bonus_exp
+    pet.level = pet_level_from_exp(pet.total_exp)
+
+    if attendance.is_first_attendance_today:
+        user.streak_days = attendance.streak_days
+        user.last_attendance_date = auth_log.verified_at.date()
+
+    auth_minutes = verified_seconds // 60
+    progress_percent = furniture_progress_from_auth_minutes(auth_minutes)
+    piece_progress = _current_furniture_piece_progress(db, user.id)
+    furniture_piece_id = piece_progress.furniture_piece_id if piece_progress else None
+    if piece_progress is not None:
+        piece_progress.progress_percent += progress_percent
+        if piece_progress.progress_percent >= 100:
+            piece_progress.completed_count = 1
+            piece_progress.progress_percent = 100
+        _ensure_completed_furniture_placement(db, user.id)
+
+    reward_log = RewardLedger(
+        user_id=user.id,
+        study_session_id=study_session.id,
+        auth_log_id=auth_log.id,
+        verified_seconds=verified_seconds,
+        pet_exp=pet_exp,
+        attendance_bonus_exp=attendance.bonus_exp,
+        furniture_piece_id=furniture_piece_id,
+        furniture_progress_percent=progress_percent if piece_progress is not None else 0,
+    )
+    db.add(reward_log)
+    db.flush()
+    return reward_log
+
+
 def _run_video_verification(auth_log_id: int) -> None:
     db = SessionLocal()
     try:
@@ -351,6 +637,9 @@ def _run_video_verification(auth_log_id: int) -> None:
         auth_log.error_message = None if result.approved else result.reason
 
         if result.approved:
+            user = db.query(User).filter(User.id == auth_log.user_id).first()
+            if user is not None:
+                _settle_success_reward(db, auth_log, study_session, user)
             auth_delay_minutes = weighted_auth_delay_minutes()
             study_session.period_minutes = auth_delay_minutes
             study_session.next_auth_time = verified_at + timedelta(minutes=auth_delay_minutes)
@@ -526,6 +815,118 @@ def register_push_token(
         message="푸시 토큰 저장",
         push_token_id=push_token.id,
     )
+
+
+@router.get("/rewards/me", response_model=RewardStateResponse)
+def get_my_reward_state(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    # 농장 화면 진입 시 펫 성장과 가구 진행도를 한 번에 복구합니다.
+    return _reward_state_response(db, current_user)
+
+
+@router.post("/rewards/settle/{auth_log_id}", response_model=RewardSettlementResponse)
+def settle_reward_by_auth_log(
+    auth_log_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    # 비동기 AI 검증이 이미 성공한 로그에 대해 보상을 수동 재정산할 때 사용합니다.
+    auth_log = (
+        db.query(AuthLog)
+        .filter(
+            AuthLog.id == auth_log_id,
+            AuthLog.user_id == current_user.id,
+        )
+        .first()
+    )
+    if auth_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="인증 로그를 찾을 수 없습니다",
+        )
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.id == auth_log.study_session_id,
+            StudySession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if study_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공부 세션을 찾을 수 없습니다",
+        )
+
+    reward_log = _settle_success_reward(db, auth_log, study_session, current_user)
+    db.commit()
+    db.refresh(reward_log)
+    state = _reward_state_response(db, current_user)
+    return {
+        "message": "보상 정산 완료",
+        "rewardLogId": reward_log.id,
+        "verifiedSeconds": reward_log.verified_seconds,
+        "petExp": reward_log.pet_exp,
+        "attendanceBonusExp": reward_log.attendance_bonus_exp,
+        "streakDays": current_user.streak_days,
+        "furnitureProgressPercent": reward_log.furniture_progress_percent,
+        "furniturePieceId": reward_log.furniture_piece_id,
+        "pet": state["pet"],
+        "furniture": state["furniture"],
+    }
+
+
+@router.post("/furniture/placements", response_model=FurniturePlacementResponse)
+def upsert_furniture_placement(
+    payload: FurniturePlacementRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    furniture_item = (
+        db.query(FurnitureItem)
+        .filter(FurnitureItem.id == payload.furniture_item_id)
+        .first()
+    )
+    if furniture_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="가구를 찾을 수 없습니다",
+        )
+
+    furniture_state = _furniture_state(db, current_user.id)
+    matching_item = next(
+        (item for item in furniture_state if item["furnitureItemId"] == furniture_item.id),
+        None,
+    )
+    if matching_item is None or not matching_item["isCompleted"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="완성된 가구만 배치할 수 있습니다",
+        )
+
+    placement = (
+        db.query(FurniturePlacement)
+        .filter(
+            FurniturePlacement.user_id == current_user.id,
+            FurniturePlacement.furniture_item_id == furniture_item.id,
+        )
+        .first()
+    )
+    if placement is None:
+        placement = FurniturePlacement(
+            user_id=current_user.id,
+            furniture_item_id=furniture_item.id,
+        )
+        db.add(placement)
+
+    placement.placed = payload.placed
+    placement.position_x = payload.position_x
+    placement.position_y = payload.position_y
+    db.commit()
+    db.refresh(placement)
+    return _placement_response(placement)
 
 
 @router.post("/groups", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)

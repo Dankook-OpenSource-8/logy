@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean, UniqueConstraint, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from db.database import Base
@@ -27,6 +27,8 @@ class User(Base):
     total_study_time = Column(Integer, default=0)
     # 사용자의 연속 출석 일수 또는 인증 성공 연속일
     streak_days = Column(Integer, default=0)
+    # 하루 첫 인증 성공을 출석으로 인정할 때 마지막으로 처리한 날짜
+    last_attendance_date = Column(Date, nullable=True)
 
     # 가입 시각과 마지막 정보 갱신 시각
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -38,6 +40,10 @@ class User(Base):
     push_tokens = relationship("UserPushToken", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
     owned_groups = relationship("StudyGroup", back_populates="owner", cascade="all, delete-orphan")
+    pet = relationship("UserPet", back_populates="owner", uselist=False, cascade="all, delete-orphan")
+    furniture_progress = relationship("UserFurniturePieceProgress", back_populates="owner", cascade="all, delete-orphan")
+    furniture_placements = relationship("FurniturePlacement", back_populates="owner", cascade="all, delete-orphan")
+    reward_logs = relationship("RewardLedger", back_populates="owner", cascade="all, delete-orphan")
     
 # 3. 공부 세션 테이블 (이미지의 end_time, status, next_auth_time 반영)
 class StudySession(Base):
@@ -201,3 +207,105 @@ class AuthLog(Base):
 
     owner = relationship("User", back_populates="auth_logs")
     session = relationship("StudySession", back_populates="auth_logs")
+    reward_log = relationship("RewardLedger", back_populates="auth_log", uselist=False)
+
+
+# 10. 사용자 펫 성장 상태
+class UserPet(Base):
+    __tablename__ = "user_pets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    name = Column(String, default="Logy", nullable=False)
+    level = Column(Integer, default=1, nullable=False)
+    total_exp = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="pet")
+
+
+# 11. 가구 종류
+class FurnitureItem(Base):
+    __tablename__ = "furniture_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    total_piece_count = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    pieces = relationship("FurniturePiece", back_populates="furniture_item", cascade="all, delete-orphan")
+    placements = relationship("FurniturePlacement", back_populates="furniture_item")
+
+
+# 12. 가구를 구성하는 개별 조각
+class FurniturePiece(Base):
+    __tablename__ = "furniture_pieces"
+    __table_args__ = (
+        UniqueConstraint("furniture_item_id", "code", name="uq_furniture_piece_item_code"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    furniture_item_id = Column(Integer, ForeignKey("furniture_items.id", ondelete="CASCADE"), index=True, nullable=False)
+    code = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+
+    furniture_item = relationship("FurnitureItem", back_populates="pieces")
+    user_progress = relationship("UserFurniturePieceProgress", back_populates="furniture_piece", cascade="all, delete-orphan")
+
+
+# 13. 사용자의 가구 조각 진행도
+class UserFurniturePieceProgress(Base):
+    __tablename__ = "user_furniture_piece_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "furniture_piece_id", name="uq_user_furniture_piece_progress"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    furniture_piece_id = Column(Integer, ForeignKey("furniture_pieces.id", ondelete="CASCADE"), index=True, nullable=False)
+    progress_percent = Column(Integer, default=0, nullable=False)
+    completed_count = Column(Integer, default=0, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="furniture_progress")
+    furniture_piece = relationship("FurniturePiece", back_populates="user_progress")
+
+
+# 14. 완성 가구 배치 정보
+class FurniturePlacement(Base):
+    __tablename__ = "furniture_placements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    furniture_item_id = Column(Integer, ForeignKey("furniture_items.id", ondelete="CASCADE"), index=True, nullable=False)
+    placed = Column(Boolean, default=False, nullable=False)
+    position_x = Column(Integer, default=0, nullable=False)
+    position_y = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="furniture_placements")
+    furniture_item = relationship("FurnitureItem", back_populates="placements")
+
+
+# 15. 인증 성공 보상 정산 기록
+class RewardLedger(Base):
+    __tablename__ = "reward_ledgers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    auth_log_id = Column(Integer, ForeignKey("auth_logs.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    verified_seconds = Column(Integer, default=0, nullable=False)
+    pet_exp = Column(Integer, default=0, nullable=False)
+    attendance_bonus_exp = Column(Integer, default=0, nullable=False)
+    furniture_piece_id = Column(Integer, ForeignKey("furniture_pieces.id", ondelete="SET NULL"), nullable=True)
+    furniture_progress_percent = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="reward_logs")
+    auth_log = relationship("AuthLog", back_populates="reward_log")
+    furniture_piece = relationship("FurniturePiece")
