@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from db.database import Base
@@ -36,6 +36,8 @@ class User(Base):
     auth_logs = relationship("AuthLog", back_populates="owner", cascade="all, delete-orphan")
     focus_interruptions = relationship("FocusInterruption", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("UserPushToken", back_populates="owner", cascade="all, delete-orphan")
+    group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    owned_groups = relationship("StudyGroup", back_populates="owner", cascade="all, delete-orphan")
     
 # 3. 공부 세션 테이블 (이미지의 end_time, status, next_auth_time 반영)
 class StudySession(Base):
@@ -70,6 +72,7 @@ class StudySession(Base):
     owner = relationship("User", back_populates="sessions")
     auth_logs = relationship("AuthLog", back_populates="session", cascade="all, delete-orphan")
     focus_interruptions = relationship("FocusInterruption", back_populates="session", cascade="all, delete-orphan")
+    active_group_members = relationship("GroupMember", back_populates="active_session")
 
 
 # 4. 앱 포커스 이탈 로그 테이블
@@ -108,7 +111,63 @@ class UserPushToken(Base):
 
     owner = relationship("User", back_populates="push_tokens")
 
-# 6. 인증 로그 테이블 (이미지의 study_session_id 연결 반영)
+
+# 6. 친구들과 함께 공부하는 그룹
+class StudyGroup(Base):
+    __tablename__ = "study_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    name = Column(String, nullable=False)
+    invite_code = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="owned_groups", foreign_keys=[owner_user_id])
+    members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    poke_logs = relationship("GroupPokeLog", back_populates="group", cascade="all, delete-orphan")
+
+
+# 7. 그룹 멤버와 마지막 활동 상태
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("study_groups.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    role = Column(String, default="member", nullable=False)
+    online_status = Column(String, default="offline", nullable=False)
+    study_status = Column(String, default="idle", nullable=False)
+    active_study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="SET NULL"), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    joined_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("StudyGroup", back_populates="members")
+    user = relationship("User", back_populates="group_memberships")
+    active_session = relationship("StudySession", back_populates="active_group_members")
+
+
+# 8. 콕 찌르기 기록
+class GroupPokeLog(Base):
+    __tablename__ = "group_poke_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("study_groups.id", ondelete="CASCADE"), index=True, nullable=False)
+    sender_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    message = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    group = relationship("StudyGroup", back_populates="poke_logs")
+    sender = relationship("User", foreign_keys=[sender_user_id])
+    target = relationship("User", foreign_keys=[target_user_id])
+
+# 9. 인증 로그 테이블 (이미지의 study_session_id 연결 반영)
 class AuthLog(Base):
     __tablename__ = "auth_logs"
 

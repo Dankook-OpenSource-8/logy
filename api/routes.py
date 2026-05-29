@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
+import secrets
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.ai_video_verification import verify_study_video
@@ -13,12 +15,32 @@ from core.random_auth_schedule import (
 )
 from core.storage import upload_video
 from db.database import SessionLocal, get_db
-from db.models import AuthLog, FocusInterruption, SessionStatus, StudySession, User, UserPushToken
+from db.models import (
+    AuthLog,
+    FocusInterruption,
+    GroupMember,
+    GroupPokeLog,
+    SessionStatus,
+    StudyGroup,
+    StudySession,
+    User,
+    UserPushToken,
+)
 from schemas import (
     ActiveStudySessionResponse,
     AuthResponse,
     FocusInterruptionCreateRequest,
     FocusInterruptionResponse,
+    GroupCreateRequest,
+    GroupInviteResponse,
+    GroupJoinRequest,
+    GroupJoinResponse,
+    GroupMembersResponse,
+    GroupMemberResponse,
+    GroupMemberStatusUpdateRequest,
+    GroupPokeCreateRequest,
+    GroupPokeResponse,
+    GroupResponse,
     NicknameCheckResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
@@ -37,6 +59,9 @@ from schemas import (
 )
 
 router = APIRouter()
+
+ONLINE_STATUSES = {"online", "offline"}
+STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "completed"}
 
 
 def _normalize(value: str) -> str:
@@ -109,6 +134,81 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         representative_frame_path=auth_log.representative_frame_path,
         created_at=auth_log.created_at,
         verified_at=auth_log.verified_at,
+    )
+
+
+def _generate_invite_code(db: Session) -> str:
+    for _ in range(10):
+        invite_code = secrets.token_hex(4).upper()
+        exists = db.query(StudyGroup.id).filter(StudyGroup.invite_code == invite_code).first()
+        if exists is None:
+            return invite_code
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="그룹 초대 코드를 생성하지 못했습니다",
+    )
+
+
+def _get_group_member_or_404(
+    db: Session,
+    group_id: int,
+    user_id,
+) -> GroupMember:
+    member = (
+        db.query(GroupMember)
+        .filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="그룹 멤버가 아닙니다",
+        )
+    return member
+
+
+def _group_total_study_seconds(db: Session, group_id: int) -> int:
+    total = (
+        db.query(func.coalesce(func.sum(StudySession.total_seconds), 0))
+        .join(GroupMember, GroupMember.user_id == StudySession.user_id)
+        .filter(
+            GroupMember.group_id == group_id,
+            StudySession.status == SessionStatus.completed,
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def _user_total_study_seconds(db: Session, user_id) -> int:
+    total = (
+        db.query(func.coalesce(func.sum(StudySession.total_seconds), 0))
+        .filter(
+            StudySession.user_id == user_id,
+            StudySession.status == SessionStatus.completed,
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
+    member_count = (
+        db.query(func.count(GroupMember.id))
+        .filter(GroupMember.group_id == group.id)
+        .scalar()
+    )
+    return GroupResponse(
+        id=group.id,
+        name=group.name,
+        invite_code=group.invite_code,
+        owner_user_id=group.owner_user_id,
+        member_count=int(member_count or 0),
+        group_total_study_seconds=_group_total_study_seconds(db, group.id),
+        created_at=group.created_at,
     )
 
 
@@ -328,6 +428,248 @@ def register_push_token(
     return PushTokenRegisterResponse(
         message="푸시 토큰 저장",
         push_token_id=push_token.id,
+    )
+
+
+@router.post("/groups", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
+def create_group(
+    payload: GroupCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupResponse:
+    group_name = payload.name.strip()
+    if not group_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="그룹 이름을 입력해주세요",
+        )
+
+    group = StudyGroup(
+        owner_user_id=current_user.id,
+        name=group_name,
+        invite_code=_generate_invite_code(db),
+    )
+    db.add(group)
+    db.flush()
+
+    db.add(
+        GroupMember(
+            group_id=group.id,
+            user_id=current_user.id,
+            role="owner",
+            online_status="online",
+            study_status="idle",
+            last_seen_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+    db.refresh(group)
+    return _group_response(db, group)
+
+
+@router.get("/groups", response_model=list[GroupResponse])
+def list_my_groups(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[GroupResponse]:
+    groups = (
+        db.query(StudyGroup)
+        .join(GroupMember, GroupMember.group_id == StudyGroup.id)
+        .filter(GroupMember.user_id == current_user.id)
+        .order_by(StudyGroup.created_at.desc())
+        .all()
+    )
+    return [_group_response(db, group) for group in groups]
+
+
+@router.post("/groups/{group_id}/invites", response_model=GroupInviteResponse)
+def get_group_invite(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupInviteResponse:
+    _get_group_member_or_404(db, group_id, current_user.id)
+    group = db.query(StudyGroup).filter(StudyGroup.id == group_id).first()
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="그룹을 찾을 수 없습니다",
+        )
+    return GroupInviteResponse(group_id=group.id, invite_code=group.invite_code)
+
+
+@router.post("/groups/join", response_model=GroupJoinResponse)
+def join_group(
+    payload: GroupJoinRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupJoinResponse:
+    invite_code = payload.invite_code.strip().upper()
+    group = db.query(StudyGroup).filter(StudyGroup.invite_code == invite_code).first()
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="유효하지 않은 초대 코드입니다",
+        )
+
+    existing_member = (
+        db.query(GroupMember)
+        .filter(
+            GroupMember.group_id == group.id,
+            GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if existing_member is None:
+        db.add(
+            GroupMember(
+                group_id=group.id,
+                user_id=current_user.id,
+                role="member",
+                online_status="online",
+                study_status="idle",
+                last_seen_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+
+    return GroupJoinResponse(
+        message="그룹 참여 완료",
+        group=_group_response(db, group),
+    )
+
+
+@router.get("/groups/{group_id}/members", response_model=GroupMembersResponse)
+def get_group_members(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupMembersResponse:
+    _get_group_member_or_404(db, group_id, current_user.id)
+    group = db.query(StudyGroup).filter(StudyGroup.id == group_id).first()
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="그룹을 찾을 수 없습니다",
+        )
+
+    members = (
+        db.query(GroupMember, User)
+        .join(User, User.id == GroupMember.user_id)
+        .filter(GroupMember.group_id == group_id)
+        .order_by(GroupMember.joined_at.asc())
+        .all()
+    )
+
+    return GroupMembersResponse(
+        group_id=group.id,
+        group_name=group.name,
+        group_total_study_seconds=_group_total_study_seconds(db, group.id),
+        members=[
+            GroupMemberResponse(
+                user_id=user.id,
+                nickname=user.nickname,
+                role=member.role,
+                online_status=member.online_status,
+                study_status=member.study_status,
+                active_study_session_id=member.active_study_session_id,
+                last_seen_at=member.last_seen_at,
+                total_study_seconds=_user_total_study_seconds(db, user.id),
+            )
+            for member, user in members
+        ],
+    )
+
+
+@router.put("/groups/{group_id}/presence", response_model=GroupMemberResponse)
+def update_group_presence(
+    group_id: int,
+    payload: GroupMemberStatusUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupMemberResponse:
+    member = _get_group_member_or_404(db, group_id, current_user.id)
+    online_status = payload.online_status.strip().lower()
+    study_status = payload.study_status.strip().lower()
+    if online_status not in ONLINE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="온라인 상태 값이 올바르지 않습니다",
+        )
+    if study_status not in STUDY_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="공부 상태 값이 올바르지 않습니다",
+        )
+
+    if payload.active_study_session_id is not None:
+        active_session = (
+            db.query(StudySession.id)
+            .filter(
+                StudySession.id == payload.active_study_session_id,
+                StudySession.user_id == current_user.id,
+            )
+            .first()
+        )
+        if active_session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="활성 공부 세션을 찾을 수 없습니다",
+            )
+
+    now = datetime.now(timezone.utc)
+    member.online_status = online_status
+    member.study_status = study_status
+    member.active_study_session_id = payload.active_study_session_id
+    member.last_seen_at = now
+    member.updated_at = now
+    db.commit()
+    db.refresh(member)
+
+    return GroupMemberResponse(
+        user_id=current_user.id,
+        nickname=current_user.nickname,
+        role=member.role,
+        online_status=member.online_status,
+        study_status=member.study_status,
+        active_study_session_id=member.active_study_session_id,
+        last_seen_at=member.last_seen_at,
+        total_study_seconds=_user_total_study_seconds(db, current_user.id),
+    )
+
+
+@router.post("/groups/{group_id}/pokes", response_model=GroupPokeResponse, status_code=status.HTTP_201_CREATED)
+def create_group_poke(
+    group_id: int,
+    payload: GroupPokeCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupPokeResponse:
+    _get_group_member_or_404(db, group_id, current_user.id)
+    target_member = _get_group_member_or_404(db, group_id, payload.target_user_id)
+    if target_member.user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="자기 자신은 콕 찌를 수 없습니다",
+        )
+
+    poke = GroupPokeLog(
+        group_id=group_id,
+        sender_user_id=current_user.id,
+        target_user_id=target_member.user_id,
+        message=payload.message.strip() if payload.message else None,
+    )
+    db.add(poke)
+    db.commit()
+    db.refresh(poke)
+
+    return GroupPokeResponse(
+        message="콕 찌르기 기록 완료",
+        poke_id=poke.id,
+        group_id=group_id,
+        sender_user_id=current_user.id,
+        target_user_id=target_member.user_id,
+        created_at=poke.created_at,
     )
 
 
