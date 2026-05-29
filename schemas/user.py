@@ -41,7 +41,6 @@ class NicknameCheckResponse(BaseModel):
 class StudySessionStartRequest(BaseModel):
     subject: str | None = Field(default=None, max_length=100)
     goal_note: str | None = Field(default=None, max_length=500)
-    period_minutes: int = Field(default=60, ge=1, le=240)
 
 
 class StudySessionStartResponse(BaseModel):
@@ -49,6 +48,7 @@ class StudySessionStartResponse(BaseModel):
     study_session_id: int
     start_time: datetime
     next_auth_time: datetime
+    auth_expires_at: datetime
 
 
 class StudySessionResponse(BaseModel):
@@ -63,6 +63,7 @@ class StudySessionResponse(BaseModel):
     status: str
     period_minutes: int
     next_auth_time: datetime | None
+    auth_expires_at: datetime | None
     is_paused: bool
     last_paused_at: datetime | None
 
@@ -111,6 +112,7 @@ class VideoVerificationResponse(BaseModel):
     message: str
     auth_log_id: int
     status: str
+    auth_expires_at: datetime | None = None
 
 
 class VideoVerificationResultResponse(BaseModel):
