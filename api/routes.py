@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import secrets
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from core.ai_video_verification import verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
@@ -14,6 +14,13 @@ from core.random_auth_schedule import (
     weighted_auth_delay_minutes,
 )
 from core.focus_analytics import AnalyticsSession, build_focus_analytics
+from core.study_archive import (
+    ArchiveAuthLog,
+    ArchiveSession,
+    build_daily_archive,
+    build_monthly_archive,
+    build_weekly_archive,
+)
 from core.storage import upload_video
 from db.database import SessionLocal, get_db
 from db.models import (
@@ -48,6 +55,8 @@ from schemas import (
     NicknameCheckResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
+    StudyArchiveDayResponse,
+    StudyArchivePeriodResponse,
     StudySessionCompleteRequest,
     StudySessionCompleteResponse,
     StudySessionResponse,
@@ -214,6 +223,90 @@ def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
         group_total_study_seconds=_group_total_study_seconds(db, group.id),
         created_at=group.created_at,
     )
+
+
+def _archive_value(value) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _archive_date_bounds(
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date, date, datetime, datetime]:
+    range_end = end_date or datetime.now(timezone.utc).date()
+    range_start = start_date or (range_end - timedelta(days=29))
+    if range_start > range_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date는 end_date보다 늦을 수 없습니다",
+        )
+
+    start_at = datetime.combine(range_start, datetime.min.time(), tzinfo=timezone.utc)
+    end_at = datetime.combine(range_end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    return range_start, range_end, start_at, end_at
+
+
+def _archive_session_from_model(study_session: StudySession) -> ArchiveSession:
+    return ArchiveSession(
+        study_session_id=study_session.id,
+        subject=study_session.subject,
+        goal_note=study_session.goal_note,
+        start_time=study_session.start_time,
+        end_time=study_session.end_time,
+        total_seconds=study_session.total_seconds or 0,
+        status=_archive_value(study_session.status),
+        auth_logs=[
+            ArchiveAuthLog(
+                auth_log_id=auth_log.id,
+                status=_archive_value(auth_log.status),
+                video_url=auth_log.video_url,
+                thumbnail_url=auth_log.thumbnail_url,
+                verification_score=auth_log.verification_score,
+                verification_reason=auth_log.verification_reason,
+                created_at=auth_log.created_at,
+                verified_at=auth_log.verified_at,
+            )
+            for auth_log in study_session.auth_logs
+        ],
+    )
+
+
+def _load_archive_days(
+    db: Session,
+    user_id,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date, date, list[dict]]:
+    range_start, range_end, start_at, end_at = _archive_date_bounds(start_date, end_date)
+    sessions = (
+        db.query(StudySession)
+        .options(selectinload(StudySession.auth_logs))
+        .filter(
+            StudySession.user_id == user_id,
+            StudySession.start_time >= start_at,
+            StudySession.start_time < end_at,
+        )
+        .order_by(StudySession.start_time.desc())
+        .all()
+    )
+    return range_start, range_end, build_daily_archive(
+        [_archive_session_from_model(session) for session in sessions if session.start_time is not None]
+    )
+
+
+def _empty_archive_day(archive_date: date) -> dict:
+    return {
+        "date": archive_date,
+        "totalSeconds": 0,
+        "sessionCount": 0,
+        "completedCount": 0,
+        "failedCount": 0,
+        "authSuccessCount": 0,
+        "authFailedCount": 0,
+        "authPendingCount": 0,
+        "authTimeoutCount": 0,
+        "sessions": [],
+    }
 
 
 def _run_video_verification(auth_log_id: int) -> None:
@@ -738,6 +831,51 @@ def get_active_study_session(
     return ActiveStudySessionResponse(
         active_session=_study_session_response(study_session) if study_session else None
     )
+
+
+@router.get("/study-archive/days", response_model=list[StudyArchiveDayResponse])
+def get_study_archive_days(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    # 캘린더와 리스트 화면에서 쓰는 날짜별 원본 아카이브입니다.
+    _, _, days = _load_archive_days(db, current_user.id, start_date, end_date)
+    return days
+
+
+@router.get("/study-archive/days/{archive_date}", response_model=StudyArchiveDayResponse)
+def get_study_archive_day(
+    archive_date: date,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    # 특정 날짜 상세 화면에서 세션과 인증 영상을 함께 보여줄 때 사용합니다.
+    _, _, days = _load_archive_days(db, current_user.id, archive_date, archive_date)
+    return days[0] if days else _empty_archive_day(archive_date)
+
+
+@router.get("/study-archive/weeks", response_model=list[StudyArchivePeriodResponse])
+def get_study_archive_weeks(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    _, _, days = _load_archive_days(db, current_user.id, start_date, end_date)
+    return build_weekly_archive(days)
+
+
+@router.get("/study-archive/months", response_model=list[StudyArchivePeriodResponse])
+def get_study_archive_months(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    _, _, days = _load_archive_days(db, current_user.id, start_date, end_date)
+    return build_monthly_archive(days)
 
 
 @router.post(
