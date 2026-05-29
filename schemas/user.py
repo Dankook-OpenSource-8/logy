@@ -185,3 +185,69 @@ class PushTokenRegisterRequest(BaseModel):
 class PushTokenRegisterResponse(BaseModel):
     message: str
     push_token_id: int
+
+
+class GroupCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+
+
+class GroupResponse(BaseModel):
+    id: int
+    name: str
+    invite_code: str
+    owner_user_id: UUID
+    member_count: int
+    group_total_study_seconds: int
+    created_at: datetime
+
+
+class GroupInviteResponse(BaseModel):
+    group_id: int
+    invite_code: str
+
+
+class GroupJoinRequest(BaseModel):
+    invite_code: str = Field(..., min_length=4, max_length=32)
+
+
+class GroupJoinResponse(BaseModel):
+    message: str
+    group: GroupResponse
+
+
+class GroupMemberStatusUpdateRequest(BaseModel):
+    online_status: str = Field(default="online", max_length=20)
+    study_status: str = Field(default="idle", max_length=20)
+    active_study_session_id: int | None = Field(default=None, ge=1)
+
+
+class GroupMemberResponse(BaseModel):
+    user_id: UUID
+    nickname: str
+    role: str
+    online_status: str
+    study_status: str
+    active_study_session_id: int | None
+    last_seen_at: datetime | None
+    total_study_seconds: int
+
+
+class GroupMembersResponse(BaseModel):
+    group_id: int
+    group_name: str
+    group_total_study_seconds: int
+    members: list[GroupMemberResponse]
+
+
+class GroupPokeCreateRequest(BaseModel):
+    target_user_id: UUID
+    message: str | None = Field(default=None, max_length=100)
+
+
+class GroupPokeResponse(BaseModel):
+    message: str
+    poke_id: int
+    group_id: int
+    sender_user_id: UUID
+    target_user_id: UUID
+    created_at: datetime
