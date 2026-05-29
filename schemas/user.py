@@ -198,6 +198,77 @@ class StudyArchivePeriodResponse(BaseModel):
     days: list[StudyArchiveDayResponse]
 
 
+class PetStageResponse(BaseModel):
+    level: int
+    name: str
+    requiredExp: int
+
+
+class UserPetResponse(BaseModel):
+    petId: int
+    name: str
+    level: int
+    stageName: str
+    totalExp: int
+    nextLevel: PetStageResponse | None
+    expToNextLevel: int
+    stages: list[PetStageResponse]
+
+
+class FurniturePieceProgressResponse(BaseModel):
+    furniturePieceId: int
+    code: str
+    name: str
+    progressPercent: int
+    completedCount: int
+
+
+class FurnitureItemProgressResponse(BaseModel):
+    furnitureItemId: int
+    code: str
+    name: str
+    totalPieceCount: int
+    completedPieceCount: int
+    isCompleted: bool
+    pieces: list[FurniturePieceProgressResponse]
+
+
+class FurniturePlacementRequest(BaseModel):
+    furniture_item_id: int = Field(..., ge=1)
+    placed: bool = True
+    position_x: int = Field(default=0, ge=0, le=100)
+    position_y: int = Field(default=0, ge=0, le=100)
+
+
+class FurniturePlacementResponse(BaseModel):
+    placementId: int
+    furnitureItemId: int
+    furnitureCode: str
+    furnitureName: str
+    placed: bool
+    positionX: int
+    positionY: int
+
+
+class RewardStateResponse(BaseModel):
+    pet: UserPetResponse
+    furniture: list[FurnitureItemProgressResponse]
+    placements: list[FurniturePlacementResponse]
+
+
+class RewardSettlementResponse(BaseModel):
+    message: str
+    rewardLogId: int
+    verifiedSeconds: int
+    petExp: int
+    attendanceBonusExp: int
+    streakDays: int
+    furnitureProgressPercent: int
+    furniturePieceId: int | None
+    pet: UserPetResponse
+    furniture: list[FurnitureItemProgressResponse]
+
+
 class VideoUploadResponse(BaseModel):
     message: str
     video_url: str
