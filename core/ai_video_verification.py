@@ -6,6 +6,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.study_image_classifier import score_with_study_classifier
+
 
 FRAME_TIMESTAMPS = (1.5, 2.0, 2.5)
 APPROVAL_THRESHOLD = 70
@@ -122,6 +124,7 @@ class FrameVerificationResult:
     forbidden_penalty: int
     scene_reason: str
     text_reason: str
+    classifier_reason: str
 
 
 _clip_model = None
@@ -159,6 +162,7 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
         scene_reason = frame_result.scene_reason
         text_score = frame_result.text_score
         text_reason = frame_result.text_reason
+        classifier_reason = frame_result.classifier_reason
         total_score = frame_result.total_score
 
         approved = total_score >= APPROVAL_THRESHOLD
@@ -170,7 +174,7 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
             reason = "학습 장면 또는 과목 관련성이 부족합니다."
 
         details = "; ".join(
-            detail for detail in (scene_reason, text_reason) if detail
+            detail for detail in (scene_reason, classifier_reason, text_reason) if detail
         )
         if details:
             reason = f"{reason} ({details})"
@@ -243,13 +247,23 @@ def select_best_verification_frame(
     for frame_path in frame_paths:
         quality_score = score_frame_quality(frame_path)
         scene_score, forbidden_penalty, scene_reason = score_scene_context(frame_path, subject)
+        classifier_result = score_with_study_classifier(frame_path)
+        if classifier_result.available:
+            scene_score = max(scene_score, classifier_result.scene_score)
+            forbidden_penalty = max(forbidden_penalty, classifier_result.forbidden_penalty)
+        classifier_reason = (
+            classifier_result.reason
+            if classifier_result.reason != "fine_tuned_classifier=not_ready"
+            else ""
+        )
+
         extracted_text = extract_text(frame_path)
         text_score, text_reason = score_subject_similarity(subject, extracted_text)
         total_score = max(
             0,
-            min(100, scene_score + text_score + quality_score - forbidden_penalty),
+            min(100, scene_score + text_score - forbidden_penalty),
         )
-        if has_strong_study_evidence(text_score, quality_score, forbidden_penalty):
+        if has_strong_study_evidence(text_score, forbidden_penalty):
             total_score = max(total_score, 72)
 
         results.append(
@@ -262,6 +276,7 @@ def select_best_verification_frame(
                 forbidden_penalty=forbidden_penalty,
                 scene_reason=scene_reason,
                 text_reason=text_reason,
+                classifier_reason=classifier_reason,
             )
         )
 
@@ -527,10 +542,9 @@ def score_formula_evidence(subject: str, extracted_text: str) -> tuple[int, str]
 
 def has_strong_study_evidence(
     text_score: int,
-    quality_score: int,
     forbidden_penalty: int,
 ) -> bool:
-    return text_score >= 28 and quality_score >= 12 and forbidden_penalty <= 5
+    return text_score >= 28 and forbidden_penalty <= 5
 
 
 def save_representative_frame(frame_path: Path) -> str:
