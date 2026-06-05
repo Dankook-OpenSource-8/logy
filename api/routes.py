@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
+import os
 import secrets
+from threading import BoundedSemaphore
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
@@ -101,6 +103,8 @@ STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "complete
 GROUP_VISIBILITIES = {"public", "private"}
 REST_DAILY_MAX_COUNT = 2
 REST_DAILY_MAX_SECONDS = 15 * 60
+AI_VERIFICATION_CONCURRENCY = max(1, int(os.getenv("AI_VERIFICATION_CONCURRENCY", "1")))
+AI_VERIFICATION_SEMAPHORE = BoundedSemaphore(AI_VERIFICATION_CONCURRENCY)
 DEFAULT_FURNITURE_CODE = "desk"
 DEFAULT_FURNITURE_PIECES = [
     ("leg_1", "책상 다리 1", 1),
@@ -696,7 +700,8 @@ def _run_video_verification(auth_log_id: int) -> None:
             return
 
         try:
-            result = verify_study_video(auth_log.video_url, study_session.subject)
+            with AI_VERIFICATION_SEMAPHORE:
+                result = verify_study_video(auth_log.video_url, study_session.subject)
         except Exception as error:
             auth_log.status = "시간초과"
             auth_log.error_message = str(error)
