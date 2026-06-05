@@ -10,7 +10,8 @@ from pathlib import Path
 from core.study_image_classifier import score_with_study_classifier
 
 
-FRAME_TIMESTAMPS = (1.5, 2.0, 2.5)
+FRAME_TIMESTAMPS = (1.5, 3.5)
+OCR_MAX_DIMENSION = 960
 APPROVAL_THRESHOLD = 70
 RETAKE_THRESHOLD = 50
 
@@ -407,11 +408,32 @@ def extract_text(frame_path: Path) -> str:
 
     try:
         reader = get_ocr_reader()
-        result = reader.readtext(str(frame_path), detail=0)
+        ocr_image_path = prepare_ocr_image(frame_path)
+        result = reader.readtext(str(ocr_image_path), detail=0)
         return " ".join(text for text in result if text)
     except Exception as exc:
         _ocr_error = _short_error(exc)
         return ""
+
+
+def prepare_ocr_image(frame_path: Path) -> Path:
+    from PIL import Image
+
+    image = Image.open(frame_path).convert("RGB")
+    width, height = image.size
+    max_dimension = max(width, height)
+    if max_dimension <= OCR_MAX_DIMENSION:
+        return frame_path
+
+    scale = OCR_MAX_DIMENSION / max_dimension
+    resized_size = (
+        max(1, round(width * scale)),
+        max(1, round(height * scale)),
+    )
+    resized_image = image.resize(resized_size, Image.Resampling.LANCZOS)
+    ocr_path = frame_path.with_name(f"{frame_path.stem}_ocr.jpg")
+    resized_image.save(ocr_path, format="JPEG", quality=85)
+    return ocr_path
 
 
 def get_ocr_reader():
