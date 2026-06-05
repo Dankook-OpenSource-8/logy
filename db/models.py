@@ -38,6 +38,7 @@ class User(Base):
     auth_logs = relationship("AuthLog", back_populates="owner", cascade="all, delete-orphan")
     focus_interruptions = relationship("FocusInterruption", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("UserPushToken", back_populates="owner", cascade="all, delete-orphan")
+    rest_logs = relationship("StudySessionRest", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
     owned_groups = relationship("StudyGroup", back_populates="owner", cascade="all, delete-orphan")
     pet = relationship("UserPet", back_populates="owner", uselist=False, cascade="all, delete-orphan")
@@ -78,6 +79,7 @@ class StudySession(Base):
     owner = relationship("User", back_populates="sessions")
     auth_logs = relationship("AuthLog", back_populates="session", cascade="all, delete-orphan")
     focus_interruptions = relationship("FocusInterruption", back_populates="session", cascade="all, delete-orphan")
+    rest_logs = relationship("StudySessionRest", back_populates="session", cascade="all, delete-orphan")
     active_group_members = relationship("GroupMember", back_populates="active_session")
 
 
@@ -103,6 +105,23 @@ class FocusInterruption(Base):
     owner = relationship("User", back_populates="focus_interruptions")
     session = relationship("StudySession", back_populates="focus_interruptions")
 
+
+# 5. 타이머 휴식 로그 테이블
+class StudySessionRest(Base):
+    __tablename__ = "study_session_rests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    duration_seconds = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="rest_logs")
+    session = relationship("StudySession", back_populates="rest_logs")
+
+
 # 5. Expo 앱 푸시 알림 토큰 테이블
 class UserPushToken(Base):
     __tablename__ = "user_push_tokens"
@@ -126,6 +145,7 @@ class StudyGroup(Base):
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     name = Column(String, nullable=False)
     invite_code = Column(String, unique=True, index=True, nullable=False)
+    visibility = Column(String, default="private", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

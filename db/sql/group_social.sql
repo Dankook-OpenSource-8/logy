@@ -6,15 +6,22 @@ CREATE TABLE IF NOT EXISTS study_groups (
     owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR NOT NULL,
     invite_code VARCHAR NOT NULL UNIQUE,
+    visibility VARCHAR NOT NULL DEFAULT 'private',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE study_groups
+    ADD COLUMN IF NOT EXISTS visibility VARCHAR NOT NULL DEFAULT 'private';
 
 CREATE INDEX IF NOT EXISTS ix_study_groups_owner_user_id
     ON study_groups(owner_user_id);
 
 CREATE INDEX IF NOT EXISTS ix_study_groups_invite_code
     ON study_groups(invite_code);
+
+CREATE INDEX IF NOT EXISTS ix_study_groups_visibility
+    ON study_groups(visibility);
 
 CREATE TABLE IF NOT EXISTS group_members (
     id SERIAL PRIMARY KEY,

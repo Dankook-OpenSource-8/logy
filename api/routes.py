@@ -44,6 +44,7 @@ from db.models import (
     SessionStatus,
     StudyGroup,
     StudySession,
+    StudySessionRest,
     User,
     UserFurniturePieceProgress,
     UserPet,
@@ -78,6 +79,9 @@ from schemas import (
     StudyArchivePeriodResponse,
     StudySessionCompleteRequest,
     StudySessionCompleteResponse,
+    StudySessionRestEndResponse,
+    StudySessionRestStartResponse,
+    StudySessionRestStatusResponse,
     StudySessionResponse,
     StudySessionStartRequest,
     StudySessionStartResponse,
@@ -94,6 +98,9 @@ router = APIRouter()
 
 ONLINE_STATUSES = {"online", "offline"}
 STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "completed"}
+GROUP_VISIBILITIES = {"public", "private"}
+REST_DAILY_MAX_COUNT = 2
+REST_DAILY_MAX_SECONDS = 15 * 60
 DEFAULT_FURNITURE_CODE = "desk"
 DEFAULT_FURNITURE_PIECES = [
     ("leg_1", "책상 다리 1", 1),
@@ -244,12 +251,86 @@ def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
     return GroupResponse(
         id=group.id,
         name=group.name,
+        visibility=group.visibility,
         invite_code=group.invite_code,
         owner_user_id=group.owner_user_id,
         member_count=int(member_count or 0),
         group_total_study_seconds=_group_total_study_seconds(db, group.id),
         created_at=group.created_at,
     )
+
+
+def _study_session_or_404(db: Session, study_session_id: int, user_id) -> StudySession:
+    study_session = (
+        db.query(StudySession)
+        .filter(
+            StudySession.id == study_session_id,
+            StudySession.user_id == user_id,
+        )
+        .first()
+    )
+    if study_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공부 세션을 찾을 수 없습니다",
+        )
+    return study_session
+
+
+def _today_rest_bounds(now: datetime) -> tuple[datetime, datetime]:
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return day_start, day_start + timedelta(days=1)
+
+
+def _daily_rest_logs(db: Session, user_id, now: datetime) -> list[StudySessionRest]:
+    day_start, day_end = _today_rest_bounds(now)
+    return (
+        db.query(StudySessionRest)
+        .filter(
+            StudySessionRest.user_id == user_id,
+            StudySessionRest.started_at >= day_start,
+            StudySessionRest.started_at < day_end,
+        )
+        .all()
+    )
+
+
+def _active_rest(db: Session, study_session_id: int) -> StudySessionRest | None:
+    return (
+        db.query(StudySessionRest)
+        .filter(
+            StudySessionRest.study_session_id == study_session_id,
+            StudySessionRest.ended_at.is_(None),
+        )
+        .order_by(StudySessionRest.started_at.desc())
+        .first()
+    )
+
+
+def _rest_status_response(
+    db: Session,
+    study_session: StudySession,
+    now: datetime,
+    **extra,
+) -> dict:
+    rest_logs = _daily_rest_logs(db, study_session.user_id, now)
+    active_rest = _active_rest(db, study_session.id)
+    used_seconds = sum(max(rest.duration_seconds or 0, 0) for rest in rest_logs)
+    if active_rest is not None:
+        used_seconds += max(int((now - active_rest.started_at).total_seconds()), 0)
+
+    rest_count = len(rest_logs)
+    return {
+        "study_session_id": study_session.id,
+        "is_paused": study_session.is_paused,
+        "daily_rest_count": rest_count,
+        "daily_rest_seconds": min(used_seconds, REST_DAILY_MAX_SECONDS),
+        "remaining_rest_count": max(REST_DAILY_MAX_COUNT - rest_count, 0),
+        "remaining_rest_seconds": max(REST_DAILY_MAX_SECONDS - used_seconds, 0),
+        "active_rest_id": active_rest.id if active_rest else None,
+        "active_rest_started_at": active_rest.started_at if active_rest else None,
+        **extra,
+    }
 
 
 def _archive_value(value) -> str:
@@ -936,16 +1017,23 @@ def create_group(
     db: Session = Depends(get_db),
 ) -> GroupResponse:
     group_name = payload.name.strip()
+    visibility = payload.visibility.strip().lower()
     if not group_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="그룹 이름을 입력해주세요",
+        )
+    if visibility not in GROUP_VISIBILITIES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="그룹 공개 범위 값이 올바르지 않습니다",
         )
 
     group = StudyGroup(
         owner_user_id=current_user.id,
         name=group_name,
         invite_code=_generate_invite_code(db),
+        visibility=visibility,
     )
     db.add(group)
     db.flush()
@@ -963,6 +1051,24 @@ def create_group(
     db.commit()
     db.refresh(group)
     return _group_response(db, group)
+
+
+@router.get("/groups/search", response_model=list[GroupResponse])
+def search_public_groups(
+    query: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[GroupResponse]:
+    groups_query = (
+        db.query(StudyGroup)
+        .filter(StudyGroup.visibility == "public")
+        .order_by(StudyGroup.created_at.desc())
+    )
+    if query and query.strip():
+        groups_query = groups_query.filter(StudyGroup.name.ilike(f"%{query.strip()}%"))
+
+    groups = groups_query.limit(30).all()
+    return [_group_response(db, group) for group in groups]
 
 
 @router.get("/groups", response_model=list[GroupResponse])
@@ -1231,6 +1337,118 @@ def get_active_study_session(
 
     return ActiveStudySessionResponse(
         active_session=_study_session_response(study_session) if study_session else None
+    )
+
+
+@router.get(
+    "/study-sessions/{study_session_id}/rests/status",
+    response_model=StudySessionRestStatusResponse,
+)
+def get_study_session_rest_status(
+    study_session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    study_session = _study_session_or_404(db, study_session_id, current_user.id)
+    return _rest_status_response(db, study_session, datetime.now(timezone.utc))
+
+
+@router.post(
+    "/study-sessions/{study_session_id}/rests/start",
+    response_model=StudySessionRestStartResponse,
+)
+def start_study_session_rest(
+    study_session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    study_session = _study_session_or_404(db, study_session_id, current_user.id)
+    if study_session.status != SessionStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="진행 중인 공부 세션에서만 휴식할 수 있습니다",
+        )
+    if study_session.is_paused or _active_rest(db, study_session.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 휴식 중입니다",
+        )
+
+    now = datetime.now(timezone.utc)
+    rest_status = _rest_status_response(db, study_session, now)
+    if rest_status["remaining_rest_count"] <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="오늘 사용할 수 있는 휴식 횟수를 모두 사용했습니다",
+        )
+    if rest_status["remaining_rest_seconds"] <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="오늘 사용할 수 있는 휴식 시간이 모두 소진되었습니다",
+        )
+
+    rest_log = StudySessionRest(
+        user_id=current_user.id,
+        study_session_id=study_session.id,
+        started_at=now,
+    )
+    study_session.is_paused = True
+    study_session.last_paused_at = now
+    db.add(rest_log)
+    db.commit()
+    db.refresh(rest_log)
+    db.refresh(study_session)
+
+    return _rest_status_response(
+        db,
+        study_session,
+        now,
+        message="휴식 시작",
+        rest_id=rest_log.id,
+    )
+
+
+@router.post(
+    "/study-sessions/{study_session_id}/rests/end",
+    response_model=StudySessionRestEndResponse,
+)
+def end_study_session_rest(
+    study_session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    study_session = _study_session_or_404(db, study_session_id, current_user.id)
+    active_rest = _active_rest(db, study_session.id)
+    if active_rest is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="진행 중인 휴식이 없습니다",
+        )
+
+    now = datetime.now(timezone.utc)
+    used_before = sum(
+        max(rest.duration_seconds or 0, 0)
+        for rest in _daily_rest_logs(db, current_user.id, now)
+        if rest.id != active_rest.id
+    )
+    rest_seconds = max(int((now - active_rest.started_at).total_seconds()), 0)
+    rest_seconds = min(rest_seconds, max(REST_DAILY_MAX_SECONDS - used_before, 0))
+
+    active_rest.ended_at = now
+    active_rest.duration_seconds = rest_seconds
+    study_session.is_paused = False
+    study_session.last_paused_at = None
+    db.commit()
+    db.refresh(active_rest)
+    db.refresh(study_session)
+
+    return _rest_status_response(
+        db,
+        study_session,
+        now,
+        message="휴식 종료",
+        rest_id=active_rest.id,
+        rest_seconds=rest_seconds,
     )
 
 

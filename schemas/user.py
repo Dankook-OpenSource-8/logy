@@ -72,6 +72,28 @@ class ActiveStudySessionResponse(BaseModel):
     active_session: StudySessionResponse | None
 
 
+class StudySessionRestStatusResponse(BaseModel):
+    study_session_id: int
+    is_paused: bool
+    daily_rest_count: int
+    daily_rest_seconds: int
+    remaining_rest_count: int
+    remaining_rest_seconds: int
+    active_rest_id: int | None
+    active_rest_started_at: datetime | None
+
+
+class StudySessionRestStartResponse(StudySessionRestStatusResponse):
+    message: str
+    rest_id: int
+
+
+class StudySessionRestEndResponse(StudySessionRestStatusResponse):
+    message: str
+    rest_id: int
+    rest_seconds: int
+
+
 class StudySessionCompleteRequest(BaseModel):
     total_seconds: int = Field(..., ge=0, le=86400)
 
@@ -315,11 +337,13 @@ class PushTokenRegisterResponse(BaseModel):
 
 class GroupCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=60)
+    visibility: str = Field(default="private", pattern="^(public|private)$")
 
 
 class GroupResponse(BaseModel):
     id: int
     name: str
+    visibility: str
     invite_code: str
     owner_user_id: UUID
     member_count: int
