@@ -4,6 +4,7 @@ from uuid import uuid4
 from api.routes import ONLINE_STATUSES, STUDY_STATUSES
 from schemas.user import (
     GroupCreateRequest,
+    GroupResponse,
     GroupJoinRequest,
     GroupMemberStatusUpdateRequest,
     GroupPokeCreateRequest,
@@ -20,6 +21,26 @@ class GroupSocialSchemaTest(unittest.TestCase):
         payload = GroupCreateRequest(name="오픈소스 8조")
 
         self.assertEqual(payload.name, "오픈소스 8조")
+        self.assertEqual(payload.visibility, "private")
+
+    def test_group_create_request_accepts_public_visibility(self):
+        payload = GroupCreateRequest(name="오픈소스 8조", visibility="public")
+
+        self.assertEqual(payload.visibility, "public")
+
+    def test_group_response_exposes_visibility_for_group_badges(self):
+        payload = GroupResponse(
+            id=1,
+            name="오픈소스 8조",
+            visibility="private",
+            invite_code="ABCD1234",
+            owner_user_id=uuid4(),
+            member_count=3,
+            group_total_study_seconds=7200,
+            created_at="2026-06-05T12:00:00Z",
+        )
+
+        self.assertEqual(payload.visibility, "private")
 
     def test_group_join_request_accepts_invite_code(self):
         payload = GroupJoinRequest(invite_code="ABCD1234")
