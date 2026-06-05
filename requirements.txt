@@ -7,7 +7,7 @@ python-dotenv==1.2.1
 python-multipart
 supabase
 Pillow
-opencv-python
+opencv-python-headless
 torch
 transformers
 sentence-transformers
