@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import urllib.request
 import uuid
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -130,8 +131,24 @@ class FrameVerificationResult:
 _clip_model = None
 _clip_processor = None
 _clip_torch = None
+_clip_error = None
 _ocr_reader = None
+_ocr_error = None
 _embedding_model = None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _short_error(error: Exception) -> str:
+    message = str(error).strip()
+    if len(message) > 160:
+        message = f"{message[:157]}..."
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
 def verify_study_video(video_url: str, subject: str | None) -> VerificationResult:
@@ -311,7 +328,8 @@ def score_scene_context(frame_path: Path, subject: str | None = None) -> tuple[i
     study_prompts = build_study_prompts(subject)
     probabilities = classify_image_with_clip(frame_path, study_prompts + FORBIDDEN_PROMPTS)
     if not probabilities:
-        return 25, 0, "이미지 맥락 모델을 사용할 수 없어 기본 장면 점수를 적용했습니다."
+        detail = f" ({_clip_error})" if _clip_error else ""
+        return 25, 0, f"이미지 맥락 모델을 사용할 수 없어 기본 장면 점수를 적용했습니다.{detail}"
 
     study_count = len(study_prompts)
     study_score = max(probabilities[:study_count])
@@ -338,6 +356,8 @@ def build_study_prompts(subject: str | None) -> tuple[str, ...]:
 
 
 def classify_image_with_clip(frame_path: Path, prompts: tuple[str, ...]) -> list[float]:
+    global _clip_error
+
     try:
         model, processor, torch = get_clip_components()
         from PIL import Image
@@ -355,7 +375,8 @@ def classify_image_with_clip(frame_path: Path, prompts: tuple[str, ...]) -> list
             probabilities = logits_per_image.softmax(dim=1)[0]
 
         return [float(value) for value in probabilities]
-    except Exception:
+    except Exception as exc:
+        _clip_error = _short_error(exc)
         return []
 
 
@@ -366,14 +387,15 @@ def get_clip_components():
         import torch
         from transformers import CLIPModel, CLIPProcessor
 
+        local_files_only = _env_bool("CLIP_LOCAL_FILES_ONLY", False)
         _clip_torch = torch
         _clip_model = CLIPModel.from_pretrained(
             "openai/clip-vit-base-patch32",
-            local_files_only=True,
+            local_files_only=local_files_only,
         )
         _clip_processor = CLIPProcessor.from_pretrained(
             "openai/clip-vit-base-patch32",
-            local_files_only=True,
+            local_files_only=local_files_only,
         )
         _clip_model.eval()
 
@@ -381,11 +403,14 @@ def get_clip_components():
 
 
 def extract_text(frame_path: Path) -> str:
+    global _ocr_error
+
     try:
         reader = get_ocr_reader()
         result = reader.readtext(str(frame_path), detail=0)
         return " ".join(text for text in result if text)
-    except Exception:
+    except Exception as exc:
+        _ocr_error = _short_error(exc)
         return ""
 
 
@@ -406,6 +431,8 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
     if not cleaned_subject:
         return 10, "과목명이 없어 텍스트 관련성 기본 점수를 적용했습니다."
     if not cleaned_text:
+        if _ocr_error:
+            return 10, f"OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다. ({_ocr_error})"
         return 10, "OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다."
 
     expanded_subject = expand_subject(cleaned_subject)
