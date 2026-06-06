@@ -11,7 +11,7 @@ from core.study_image_classifier import score_with_study_classifier
 
 
 FRAME_TIMESTAMPS = (1.5, 3.5)
-OCR_MAX_DIMENSION = 960
+OCR_MAX_DIMENSION = 1120
 APPROVAL_THRESHOLD = 70
 RETAKE_THRESHOLD = 50
 
@@ -43,7 +43,12 @@ FORBIDDEN_PROMPTS = (
 )
 
 SUBJECT_ALIASES = {
-    # 특정 과목을 직접 판정하기 위한 목록이 아니라, OCR이 너무 깨질 때만 쓰는 보조 힌트입니다.
+    # OCR은 한국어 과목명보다 화면 속 영문 약어를 더 잘 잡는 경우가 많아 보조 키워드만 가볍게 붙입니다.
+    "컴퓨터구조": "computer architecture cpu cache memory pipeline branch instruction datapath register alu if id ex mem store load hazard control",
+    "자료구조": "data structure hash bucket collision graph tree stack queue heap dfs bfs connected component",
+    "알고리즘": "algorithm dynamic programming greedy graph shortest path minimum spanning tree prim kruskal connected component",
+    "데이터베이스": "database sql erd entity relation table customer primary key foreign key query ddl dml schema",
+    "선형대수": "linear algebra vector matrix scalar basis span transformation eigenvalue determinant multiplication",
 }
 
 ACADEMIC_TEXT_HINTS = {
@@ -54,24 +59,45 @@ ACADEMIC_TEXT_HINTS = {
     "cache",
     "chart",
     "chapter",
+    "collision",
     "control",
     "cpu",
+    "database",
     "datapath",
+    "dfs",
+    "dml",
+    "ddl",
+    "erd",
     "equation",
+    "entity",
     "execution",
+    "foreign",
     "graph",
+    "hash",
+    "heap",
+    "id",
+    "if",
     "instruction",
+    "key",
     "lecture",
     "linear",
+    "load",
     "matrix",
     "memory",
+    "mem",
     "multiplication",
     "pipeline",
     "processor",
+    "query",
+    "relation",
     "register",
     "scalar",
+    "schema",
     "signal",
+    "sql",
     "stack",
+    "store",
+    "table",
     "theorem",
     "transformation",
     "vector",
@@ -417,22 +443,25 @@ def extract_text(frame_path: Path) -> str:
 
 
 def prepare_ocr_image(frame_path: Path) -> Path:
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageOps
 
     image = Image.open(frame_path).convert("RGB")
     width, height = image.size
     max_dimension = max(width, height)
-    if max_dimension <= OCR_MAX_DIMENSION:
-        return frame_path
 
-    scale = OCR_MAX_DIMENSION / max_dimension
-    resized_size = (
-        max(1, round(width * scale)),
-        max(1, round(height * scale)),
-    )
-    resized_image = image.resize(resized_size, Image.Resampling.LANCZOS)
+    if max_dimension > OCR_MAX_DIMENSION:
+        scale = OCR_MAX_DIMENSION / max_dimension
+        resized_size = (
+            max(1, round(width * scale)),
+            max(1, round(height * scale)),
+        )
+        image = image.resize(resized_size, Image.Resampling.LANCZOS)
+
+    enhanced_image = ImageOps.autocontrast(image, cutoff=1)
+    enhanced_image = ImageEnhance.Contrast(enhanced_image).enhance(1.25)
+    enhanced_image = ImageEnhance.Sharpness(enhanced_image).enhance(1.35)
     ocr_path = frame_path.with_name(f"{frame_path.stem}_ocr.jpg")
-    resized_image.save(ocr_path, format="JPEG", quality=85)
+    enhanced_image.save(ocr_path, format="JPEG", quality=90)
     return ocr_path
 
 
