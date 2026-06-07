@@ -34,8 +34,7 @@ def score_with_study_classifier(frame_path: Path) -> StudyClassifierResult:
         image = Image.open(frame_path).convert("RGB")
         inputs = processor(images=image, return_tensors="pt")
         with torch.no_grad():
-            image_features = model.get_image_features(**inputs)
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            image_features = get_image_features(model, inputs)
             logits = classifier_head(image_features)
             study_probability = float(torch.softmax(logits, dim=1)[0][1])
 
@@ -60,12 +59,16 @@ def score_with_study_classifier(frame_path: Path) -> StudyClassifierResult:
 def score_probability(study_probability: float) -> tuple[int, int]:
     normalized = max(0.0, min(1.0, study_probability))
     scene_score = round(normalized * 45)
+    # 학습된 모델은 study/non_study만 구분하므로, 여기서는 "공부 아님" 확률을 감점으로만 반영합니다.
     forbidden_penalty = round((1.0 - normalized) * 40)
     return scene_score, forbidden_penalty
 
 
 @lru_cache
 def get_classifier_components():
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
     import torch
     from transformers import CLIPModel, CLIPProcessor
 
@@ -81,3 +84,12 @@ def get_classifier_components():
     clip_model.eval()
     classifier_head.eval()
     return clip_model, processor, torch, classifier_head
+
+
+def get_image_features(clip_model, inputs):
+    features = clip_model.get_image_features(**inputs)
+    if hasattr(features, "image_embeds"):
+        features = features.image_embeds
+    elif hasattr(features, "pooler_output"):
+        features = features.pooler_output
+    return features / features.norm(dim=-1, keepdim=True)

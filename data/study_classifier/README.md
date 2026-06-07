@@ -21,8 +21,13 @@ data/study_classifier/
 
 ## 사용 방법
 
-1. 촬영한 이미지를 위 폴더에 라벨별로 넣습니다.
-2. `train`과 `val`은 직접 나눕니다. 처음에는 8:2 정도가 무난합니다.
+1. 촬영한 이미지를 `study`, `non` 폴더에 라벨별로 모읍니다.
+2. 아래 명령으로 이미지를 `train`과 `val`에 8:2 비율로 나눕니다.
+
+```bash
+.venv/bin/python scripts/prepare_study_classifier_dataset.py
+```
+
 3. 아래 명령으로 classifier head를 학습합니다.
 
 ```bash
@@ -30,3 +35,5 @@ data/study_classifier/
 ```
 
 학습이 끝나면 `models/study_classifier.pt`가 생성되고, 백엔드 AI 검증은 이 모델을 자동으로 함께 사용합니다.
+
+이미지 원본은 용량이 커서 Git에는 올리지 않습니다. 재학습이 필요하면 로컬 이미지 폴더에서 다시 준비 스크립트를 실행합니다.
