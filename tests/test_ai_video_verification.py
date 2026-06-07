@@ -8,6 +8,7 @@ from PIL import Image
 from core.ai_video_verification import (
     FRAME_TIMESTAMPS,
     OCR_MAX_DIMENSION,
+    has_ocr_timeout,
     prepare_ocr_image,
     select_best_verification_frame,
 )
@@ -111,6 +112,12 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         self.assertEqual(result.forbidden_penalty, 30)
         self.assertEqual(result.total_score, 72)
+
+    def test_ocr_timeout_reason_is_detected_for_retake(self):
+        self.assertTrue(
+            has_ocr_timeout("OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. (OCRTimeout: OCR 처리 시간이 40초를 초과했습니다.)")
+        )
+        self.assertFalse(has_ocr_timeout("OCR 텍스트가 없습니다."))
 
 
 if __name__ == "__main__":

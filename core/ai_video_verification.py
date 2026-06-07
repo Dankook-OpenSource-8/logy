@@ -409,7 +409,9 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
         total_score = frame_result.total_score
 
         approved = total_score >= APPROVAL_THRESHOLD
-        if total_score >= APPROVAL_THRESHOLD:
+        if has_ocr_timeout(text_reason):
+            reason = "OCR 처리 시간이 초과되어 재촬영이 필요합니다."
+        elif total_score >= APPROVAL_THRESHOLD:
             reason = "학습 장면 맥락과 과목 관련성이 충분합니다."
         elif total_score >= RETAKE_THRESHOLD:
             reason = "학습 여부가 애매하여 재촬영이 필요합니다."
@@ -859,6 +861,10 @@ def score_formula_evidence(subject: str, extracted_text: str) -> tuple[int, str]
 
 def has_strong_study_evidence(text_score: int) -> bool:
     return text_score >= STRONG_TEXT_SCORE
+
+
+def has_ocr_timeout(text_reason: str) -> bool:
+    return "OCRTimeout" in text_reason or "OCR 처리 시간이" in text_reason
 
 
 def save_representative_frame(frame_path: Path) -> str:
