@@ -16,7 +16,7 @@ APPROVAL_THRESHOLD = 70
 RETAKE_THRESHOLD = 50
 SCENE_SCORE_MAX = 60
 TEXT_SCORE_MAX = 40
-DEFAULT_TEXT_SCORE = 12
+DEFAULT_TEXT_SCORE = 0
 STRONG_TEXT_SCORE = 36
 
 STUDY_PROMPTS = (
@@ -677,11 +677,11 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
     cleaned_subject = (subject or "").strip()
     cleaned_text = extracted_text.strip()
     if not cleaned_subject:
-        return DEFAULT_TEXT_SCORE, "과목명이 없어 텍스트 관련성 기본 점수를 적용했습니다."
+        return DEFAULT_TEXT_SCORE, "과목명이 없어 과목 관련성 점수를 부여하지 않았습니다."
     if not cleaned_text:
         if _ocr_error:
-            return DEFAULT_TEXT_SCORE, f"OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다. ({_ocr_error})"
-        return DEFAULT_TEXT_SCORE, "OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다."
+            return DEFAULT_TEXT_SCORE, f"OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. ({_ocr_error})"
+        return DEFAULT_TEXT_SCORE, "OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다."
 
     expanded_subject = expand_subject(cleaned_subject)
     similarity = calculate_text_similarity(expanded_subject, cleaned_text)
@@ -734,7 +734,7 @@ def keyword_fallback_score(subject: str, extracted_text: str) -> tuple[int, str]
     text_tokens = tokenize_text(extracted_text)
     evidence_score, evidence_reason = score_academic_text_evidence(subject, extracted_text)
     if not subject_tokens or not text_tokens:
-        return max(DEFAULT_TEXT_SCORE, evidence_score), "임베딩 모델을 사용할 수 없어 텍스트 기본 점수를 적용했습니다."
+        return evidence_score, "임베딩 모델을 사용할 수 없어 OCR 근거 기준으로 보정했습니다."
 
     overlap = len(subject_tokens & text_tokens)
     ratio = overlap / max(1, len(subject_tokens))
