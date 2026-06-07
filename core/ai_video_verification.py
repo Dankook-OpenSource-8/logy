@@ -4,6 +4,7 @@ import tempfile
 import urllib.request
 import uuid
 import os
+import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +12,8 @@ from core.study_image_classifier import score_with_study_classifier
 
 
 FRAME_TIMESTAMPS = (1.5, 3.5)
-OCR_MAX_DIMENSION = 1120
+OCR_MAX_DIMENSION = 960
+OCR_TIMEOUT_SECONDS = 40
 APPROVAL_THRESHOLD = 70
 RETAKE_THRESHOLD = 50
 SCENE_SCORE_MAX = 60
@@ -630,9 +632,8 @@ def extract_text(frame_path: Path) -> str:
     global _ocr_error
 
     try:
-        reader = get_ocr_reader()
         ocr_image_path = prepare_ocr_image(frame_path)
-        result = reader.readtext(str(ocr_image_path), detail=0)
+        result = read_ocr_text_with_timeout(ocr_image_path, OCR_TIMEOUT_SECONDS)
         return " ".join(text for text in result if text)
     except Exception as exc:
         _ocr_error = _short_error(exc)
@@ -642,7 +643,7 @@ def extract_text(frame_path: Path) -> str:
 def prepare_ocr_image(frame_path: Path) -> Path:
     from PIL import Image, ImageEnhance, ImageOps
 
-    image = Image.open(frame_path).convert("RGB")
+    image = ImageOps.exif_transpose(Image.open(frame_path)).convert("RGB")
     width, height = image.size
     max_dimension = max(width, height)
 
@@ -660,6 +661,47 @@ def prepare_ocr_image(frame_path: Path) -> Path:
     ocr_path = frame_path.with_name(f"{frame_path.stem}_ocr.jpg")
     enhanced_image.save(ocr_path, format="JPEG", quality=90)
     return ocr_path
+
+
+def read_ocr_text_with_timeout(ocr_image_path: Path, timeout_seconds: int) -> list[str]:
+    global _ocr_error
+
+    context_name = "fork" if hasattr(os, "fork") else "spawn"
+    context = mp.get_context(context_name)
+    result_queue = context.Queue(maxsize=1)
+    process = context.Process(
+        target=_read_ocr_text_worker,
+        args=(str(ocr_image_path), result_queue),
+    )
+    process.start()
+    process.join(timeout_seconds)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(2)
+        _ocr_error = f"OCRTimeout: OCR 처리 시간이 {timeout_seconds}초를 초과했습니다."
+        return []
+
+    if result_queue.empty():
+        _ocr_error = "OCRWorkerError: OCR 처리 결과를 받지 못했습니다."
+        return []
+
+    status, payload = result_queue.get()
+    if status == "ok":
+        _ocr_error = None
+        return payload
+
+    _ocr_error = payload
+    return []
+
+
+def _read_ocr_text_worker(image_path: str, result_queue) -> None:
+    try:
+        reader = get_ocr_reader()
+        result = reader.readtext(image_path, detail=0)
+        result_queue.put(("ok", [text for text in result if text]))
+    except Exception as exc:
+        result_queue.put(("error", _short_error(exc)))
 
 
 def get_ocr_reader():
