@@ -483,24 +483,27 @@ def select_best_verification_frame(
     results: list[FrameVerificationResult] = []
     for frame_path in frame_paths:
         quality_score = score_frame_quality(frame_path)
-        scene_score, forbidden_penalty, scene_reason = score_scene_context(frame_path, subject)
         classifier_result = score_with_study_classifier(frame_path)
         if classifier_result.available:
-            scene_score = max(scene_score, classifier_result.scene_score)
-            forbidden_penalty = max(forbidden_penalty, classifier_result.forbidden_penalty)
-        classifier_reason = (
-            classifier_result.reason
-            if classifier_result.reason != "fine_tuned_classifier=not_ready"
-            else ""
-        )
+            scene_score = classifier_result.scene_score
+            forbidden_penalty = 0
+            scene_reason = ""
+            classifier_reason = classifier_result.reason
+        else:
+            scene_score, forbidden_penalty, scene_reason = score_scene_context(frame_path, subject)
+            classifier_reason = (
+                classifier_result.reason
+                if classifier_result.reason != "fine_tuned_classifier=not_ready"
+                else ""
+            )
 
         extracted_text = extract_text(frame_path)
         text_score, text_reason = score_subject_similarity(subject, extracted_text)
         total_score = max(
             0,
-            min(100, scene_score + text_score - forbidden_penalty),
+            min(100, scene_score + text_score),
         )
-        if has_strong_study_evidence(text_score, forbidden_penalty):
+        if has_strong_study_evidence(text_score):
             total_score = max(total_score, 72)
 
         results.append(
@@ -546,19 +549,16 @@ def score_frame_quality(frame_path: Path) -> int:
 
 def score_scene_context(frame_path: Path, subject: str | None = None) -> tuple[int, int, str]:
     study_prompts = build_study_prompts(subject)
-    probabilities = classify_image_with_clip(frame_path, study_prompts + FORBIDDEN_PROMPTS)
+    probabilities = classify_image_with_clip(frame_path, study_prompts)
     if not probabilities:
         detail = f" ({_clip_error})" if _clip_error else ""
         return 25, 0, f"이미지 맥락 모델을 사용할 수 없어 기본 장면 점수를 적용했습니다.{detail}"
 
-    study_count = len(study_prompts)
-    study_score = max(probabilities[:study_count])
-    forbidden_score = max(probabilities[study_count:])
+    study_score = max(probabilities)
 
     scene_points = round(study_score * 45)
-    forbidden_penalty = round(forbidden_score * 40)
-    reason = f"study={study_score:.2f}, forbidden={forbidden_score:.2f}"
-    return scene_points, forbidden_penalty, reason
+    reason = f"study={study_score:.2f}"
+    return scene_points, 0, reason
 
 
 def build_study_prompts(subject: str | None) -> tuple[str, ...]:
@@ -811,11 +811,8 @@ def score_formula_evidence(subject: str, extracted_text: str) -> tuple[int, str]
     return 0, ""
 
 
-def has_strong_study_evidence(
-    text_score: int,
-    forbidden_penalty: int,
-) -> bool:
-    return text_score >= 28 and forbidden_penalty <= 5
+def has_strong_study_evidence(text_score: int) -> bool:
+    return text_score >= 28
 
 
 def save_representative_frame(frame_path: Path) -> str:

@@ -59,9 +59,7 @@ def score_with_study_classifier(frame_path: Path) -> StudyClassifierResult:
 def score_probability(study_probability: float) -> tuple[int, int]:
     normalized = max(0.0, min(1.0, study_probability))
     scene_score = round(normalized * 45)
-    # 학습된 모델은 study/non_study만 구분하므로, 여기서는 "공부 아님" 확률을 감점으로만 반영합니다.
-    forbidden_penalty = round((1.0 - normalized) * 40)
-    return scene_score, forbidden_penalty
+    return scene_score, 0
 
 
 @lru_cache

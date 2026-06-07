@@ -11,14 +11,14 @@ class StudyImageClassifierTest(unittest.TestCase):
         scene_score, forbidden_penalty = score_probability(0.8)
 
         self.assertEqual(scene_score, 36)
-        self.assertEqual(forbidden_penalty, 8)
+        self.assertEqual(forbidden_penalty, 0)
 
     def test_score_probability_clamps_probability_range(self):
         high_scene_score, high_penalty = score_probability(1.5)
         low_scene_score, low_penalty = score_probability(-0.5)
 
         self.assertEqual((high_scene_score, high_penalty), (45, 0))
-        self.assertEqual((low_scene_score, low_penalty), (0, 40))
+        self.assertEqual((low_scene_score, low_penalty), (0, 0))
 
     def test_missing_model_returns_unavailable_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
