@@ -95,7 +95,7 @@ class AiVideoVerificationTest(unittest.TestCase):
                 patch("core.ai_video_verification.score_frame_quality", return_value=10),
                 patch("core.ai_video_verification.score_scene_context", return_value=(20, 30, "study=0.45")),
                 patch("core.ai_video_verification.extract_text", return_value="open source"),
-                patch("core.ai_video_verification.score_subject_similarity", return_value=(30, "subject evidence")),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(40, "subject evidence")),
                 patch(
                     "core.ai_video_verification.score_with_study_classifier",
                     return_value=StudyClassifierResult(

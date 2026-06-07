@@ -6,6 +6,7 @@ from pathlib import Path
 
 DEFAULT_MODEL_PATH = "models/study_classifier.pt"
 MODEL_PATH = Path(os.getenv("STUDY_CLASSIFIER_MODEL_PATH", DEFAULT_MODEL_PATH))
+SCENE_SCORE_MAX = 60
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def score_with_study_classifier(frame_path: Path) -> StudyClassifierResult:
 
 def score_probability(study_probability: float) -> tuple[int, int]:
     normalized = max(0.0, min(1.0, study_probability))
-    scene_score = round(normalized * 45)
+    scene_score = round(normalized * SCENE_SCORE_MAX)
     return scene_score, 0
 
 
