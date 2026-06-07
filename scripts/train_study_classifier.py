@@ -1,3 +1,6 @@
+import copy
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -6,14 +9,21 @@ DATASET_DIR = Path("data/study_classifier")
 OUTPUT_PATH = Path("models/study_classifier.pt")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 LABELS = {"non_study": 0, "study": 1}
+EPOCHS = 10
+BATCH_SIZE = 8
+RANDOM_SEED = 42
 
 
 def main() -> None:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
     import torch
     from PIL import Image
     from torch.utils.data import DataLoader, Dataset
     from transformers import CLIPModel, CLIPProcessor
 
+    torch.manual_seed(RANDOM_SEED)
     train_samples = collect_samples(DATASET_DIR / "train")
     val_samples = collect_samples(DATASET_DIR / "val")
     if not train_samples:
@@ -21,23 +31,31 @@ def main() -> None:
     if not val_samples:
         raise SystemExit("val 폴더에 검증 이미지가 없습니다.")
 
+    device = select_device(torch)
+    print(f"device={device}")
+
     processor = CLIPProcessor.from_pretrained(CLIP_MODEL_NAME, local_files_only=True)
-    clip_model = CLIPModel.from_pretrained(CLIP_MODEL_NAME, local_files_only=True)
+    clip_model = CLIPModel.from_pretrained(CLIP_MODEL_NAME, local_files_only=True).to(device)
     clip_model.eval()
     for parameter in clip_model.parameters():
         parameter.requires_grad = False
 
     train_dataset = StudyImageDataset(train_samples, processor)
     val_dataset = StudyImageDataset(val_samples, processor)
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=8)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
     input_dim = clip_model.config.projection_dim
-    classifier_head = torch.nn.Linear(input_dim, 2)
+    classifier_head = torch.nn.Linear(input_dim, 2).to(device)
     optimizer = torch.optim.AdamW(classifier_head.parameters(), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    for epoch in range(1, 11):
+    val_accuracy = 0.0
+    confusion = {"tp": 0, "tn": 0, "fp": 0, "fn": 0}
+    best_val_accuracy = 0.0
+    best_confusion = confusion
+    best_state_dict = copy.deepcopy(classifier_head.state_dict())
+    for epoch in range(1, EPOCHS + 1):
         train_loss = train_one_epoch(
             clip_model,
             classifier_head,
@@ -45,12 +63,17 @@ def main() -> None:
             optimizer,
             loss_fn,
             torch,
+            device,
         )
-        val_accuracy = evaluate(clip_model, classifier_head, val_loader, torch)
+        val_accuracy, confusion = evaluate(clip_model, classifier_head, val_loader, torch, device)
         print(
             f"epoch={epoch} train_loss={train_loss:.4f} "
-            f"val_accuracy={val_accuracy:.3f}"
+            f"val_accuracy={val_accuracy:.3f} confusion={confusion}"
         )
+        if val_accuracy >= best_val_accuracy:
+            best_val_accuracy = val_accuracy
+            best_confusion = confusion
+            best_state_dict = copy.deepcopy(classifier_head.state_dict())
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -58,11 +81,29 @@ def main() -> None:
             "clip_model_name": CLIP_MODEL_NAME,
             "input_dim": input_dim,
             "label_names": ["non_study", "study"],
-            "classifier_state_dict": classifier_head.state_dict(),
+            "classifier_state_dict": {
+                key: value.detach().cpu()
+                for key, value in best_state_dict.items()
+            },
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "train_count": len(train_samples),
+            "val_count": len(val_samples),
+            "val_accuracy": best_val_accuracy,
+            "confusion": best_confusion,
+            "epochs": EPOCHS,
+            "batch_size": BATCH_SIZE,
         },
         OUTPUT_PATH,
     )
     print(f"saved: {OUTPUT_PATH}")
+
+
+def select_device(torch):
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
 class StudyImageDataset:
@@ -101,37 +142,59 @@ def train_one_epoch(
     optimizer,
     loss_fn,
     torch,
+    device,
 ) -> float:
     classifier_head.train()
     total_loss = 0.0
     for pixel_values, labels in loader:
+        pixel_values = pixel_values.to(device)
+        labels = labels.to(device)
         with torch.no_grad():
-            image_features = clip_model.get_image_features(pixel_values=pixel_values)
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            image_features = get_image_features(clip_model, pixel_values)
 
         logits = classifier_head(image_features)
         loss = loss_fn(logits, labels)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        total_loss += float(loss)
+        total_loss += float(loss.detach().cpu())
 
     return total_loss / max(1, len(loader))
 
 
-def evaluate(clip_model, classifier_head, loader, torch) -> float:
+def evaluate(clip_model, classifier_head, loader, torch, device) -> tuple[float, dict[str, int]]:
     classifier_head.eval()
     correct = 0
     total = 0
+    confusion = {"tp": 0, "tn": 0, "fp": 0, "fn": 0}
     with torch.no_grad():
         for pixel_values, labels in loader:
-            image_features = clip_model.get_image_features(pixel_values=pixel_values)
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            pixel_values = pixel_values.to(device)
+            labels = labels.to(device)
+            image_features = get_image_features(clip_model, pixel_values)
             predictions = classifier_head(image_features).argmax(dim=1)
             correct += int((predictions == labels).sum())
             total += int(labels.numel())
+            for prediction, label in zip(predictions.detach().cpu(), labels.detach().cpu()):
+                if int(prediction) == 1 and int(label) == 1:
+                    confusion["tp"] += 1
+                elif int(prediction) == 0 and int(label) == 0:
+                    confusion["tn"] += 1
+                elif int(prediction) == 1 and int(label) == 0:
+                    confusion["fp"] += 1
+                else:
+                    confusion["fn"] += 1
 
-    return correct / total if total else 0.0
+    return (correct / total if total else 0.0), confusion
+
+
+def get_image_features(clip_model, pixel_values):
+    features = clip_model.get_image_features(pixel_values=pixel_values)
+    if hasattr(features, "image_embeds"):
+        features = features.image_embeds
+    elif hasattr(features, "pooler_output"):
+        features = features.pooler_output
+    return features / features.norm(dim=-1, keepdim=True)
 
 
 if __name__ == "__main__":
