@@ -40,7 +40,7 @@ class AiVideoVerificationTest(unittest.TestCase):
                 patch("core.ai_video_verification.score_frame_quality", return_value=10),
                 patch("core.ai_video_verification.score_scene_context", return_value=(25, 0, "study=0.55")),
                 patch("core.ai_video_verification.extract_text", return_value=""),
-                patch("core.ai_video_verification.score_subject_similarity", return_value=(10, "OCR 텍스트가 없습니다.")),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(0, "OCR 텍스트가 없습니다.")),
                 patch(
                     "core.ai_video_verification.score_with_study_classifier",
                     return_value=StudyClassifierResult(
@@ -55,7 +55,7 @@ class AiVideoVerificationTest(unittest.TestCase):
                 result = select_best_verification_frame([frame_path], "수학")
 
         self.assertEqual(result.classifier_reason, "")
-        self.assertEqual(result.total_score, 35)
+        self.assertEqual(result.total_score, 25)
 
     def test_fine_tuned_classifier_replaces_scene_prompt_score(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -66,7 +66,7 @@ class AiVideoVerificationTest(unittest.TestCase):
                 patch("core.ai_video_verification.score_frame_quality", return_value=10),
                 patch("core.ai_video_verification.score_scene_context") as scene_context,
                 patch("core.ai_video_verification.extract_text", return_value=""),
-                patch("core.ai_video_verification.score_subject_similarity", return_value=(10, "OCR 텍스트가 없습니다.")),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(0, "OCR 텍스트가 없습니다.")),
                 patch(
                     "core.ai_video_verification.score_with_study_classifier",
                     return_value=StudyClassifierResult(
@@ -84,7 +84,7 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(result.scene_score, 40)
         self.assertEqual(result.forbidden_penalty, 0)
         self.assertEqual(result.classifier_reason, "fine_tuned_study_probability=0.90")
-        self.assertEqual(result.total_score, 50)
+        self.assertEqual(result.total_score, 40)
 
     def test_total_score_uses_scene_and_subject_without_forbidden_penalty(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -95,7 +95,7 @@ class AiVideoVerificationTest(unittest.TestCase):
                 patch("core.ai_video_verification.score_frame_quality", return_value=10),
                 patch("core.ai_video_verification.score_scene_context", return_value=(20, 30, "study=0.45")),
                 patch("core.ai_video_verification.extract_text", return_value="open source"),
-                patch("core.ai_video_verification.score_subject_similarity", return_value=(30, "subject evidence")),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(40, "subject evidence")),
                 patch(
                     "core.ai_video_verification.score_with_study_classifier",
                     return_value=StudyClassifierResult(

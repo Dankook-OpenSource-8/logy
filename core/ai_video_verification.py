@@ -14,6 +14,10 @@ FRAME_TIMESTAMPS = (1.5, 3.5)
 OCR_MAX_DIMENSION = 1120
 APPROVAL_THRESHOLD = 70
 RETAKE_THRESHOLD = 50
+SCENE_SCORE_MAX = 60
+TEXT_SCORE_MAX = 40
+DEFAULT_TEXT_SCORE = 0
+STRONG_TEXT_SCORE = 36
 
 STUDY_PROMPTS = (
     "a person studying with books and notes",
@@ -556,7 +560,7 @@ def score_scene_context(frame_path: Path, subject: str | None = None) -> tuple[i
 
     study_score = max(probabilities)
 
-    scene_points = round(study_score * 45)
+    scene_points = round(study_score * SCENE_SCORE_MAX)
     reason = f"study={study_score:.2f}"
     return scene_points, 0, reason
 
@@ -673,11 +677,11 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
     cleaned_subject = (subject or "").strip()
     cleaned_text = extracted_text.strip()
     if not cleaned_subject:
-        return 10, "과목명이 없어 텍스트 관련성 기본 점수를 적용했습니다."
+        return DEFAULT_TEXT_SCORE, "과목명이 없어 과목 관련성 점수를 부여하지 않았습니다."
     if not cleaned_text:
         if _ocr_error:
-            return 10, f"OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다. ({_ocr_error})"
-        return 10, "OCR 텍스트가 없어 텍스트 관련성 기본 점수를 적용했습니다."
+            return DEFAULT_TEXT_SCORE, f"OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. ({_ocr_error})"
+        return DEFAULT_TEXT_SCORE, "OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다."
 
     expanded_subject = expand_subject(cleaned_subject)
     similarity = calculate_text_similarity(expanded_subject, cleaned_text)
@@ -708,7 +712,7 @@ def calculate_text_similarity(subject: str, extracted_text: str) -> float | None
 def score_similarity(similarity: float) -> int:
     # Sentence-transformer 유사도는 짧은 과목명 vs 긴 OCR 텍스트에서 0.3대도 꽤 의미 있는 관련성입니다.
     calibrated = (similarity - 0.12) / 0.38
-    return round(max(0.0, min(1.0, calibrated)) * 35)
+    return round(max(0.0, min(1.0, calibrated)) * TEXT_SCORE_MAX)
 
 
 def get_embedding_model():
@@ -730,11 +734,11 @@ def keyword_fallback_score(subject: str, extracted_text: str) -> tuple[int, str]
     text_tokens = tokenize_text(extracted_text)
     evidence_score, evidence_reason = score_academic_text_evidence(subject, extracted_text)
     if not subject_tokens or not text_tokens:
-        return max(10, evidence_score), "임베딩 모델을 사용할 수 없어 텍스트 기본 점수를 적용했습니다."
+        return evidence_score, "임베딩 모델을 사용할 수 없어 OCR 근거 기준으로 보정했습니다."
 
     overlap = len(subject_tokens & text_tokens)
     ratio = overlap / max(1, len(subject_tokens))
-    score = 10 + round(min(1.0, ratio) * 15)
+    score = DEFAULT_TEXT_SCORE + round(min(1.0, ratio) * 18)
     score = max(score, evidence_score)
     reason = "임베딩 모델을 사용할 수 없어 키워드 겹침 기준으로 보정했습니다."
     if evidence_reason:
@@ -772,13 +776,13 @@ def score_academic_text_evidence(subject: str, extracted_text: str) -> tuple[int
 
     hint_matches = tokens & ACADEMIC_TEXT_HINTS
     if len(hint_matches) >= 4:
-        return max(28, formula_score), f"academic_text_hints={len(hint_matches)}"
+        return max(36, formula_score), f"academic_text_hints={len(hint_matches)}"
     if len(hint_matches) >= 2:
-        return max(22, formula_score), f"academic_text_hints={len(hint_matches)}"
+        return max(28, formula_score), f"academic_text_hints={len(hint_matches)}"
     if formula_score:
         return formula_score, formula_reason
     if len(tokens) >= 20:
-        return 16, "OCR 학습 텍스트량이 충분합니다."
+        return 22, "OCR 학습 텍스트량이 충분합니다."
 
     return 0, ""
 
@@ -804,15 +808,15 @@ def score_formula_evidence(subject: str, extracted_text: str) -> tuple[int, str]
     }
 
     if formula_markers >= 6 or len(math_words) >= 2:
-        return 30, f"math_formula_evidence={formula_markers}"
+        return 40, f"math_formula_evidence={formula_markers}"
     if formula_markers >= 3 or len(math_words) >= 1:
-        return 24, f"math_formula_evidence={formula_markers}"
+        return 32, f"math_formula_evidence={formula_markers}"
 
     return 0, ""
 
 
 def has_strong_study_evidence(text_score: int) -> bool:
-    return text_score >= 28
+    return text_score >= STRONG_TEXT_SCORE
 
 
 def save_representative_frame(frame_path: Path) -> str:
