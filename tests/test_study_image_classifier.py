@@ -1,9 +1,13 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from core.study_image_classifier import score_probability, score_with_study_classifier
+from core.study_image_classifier import (
+    get_classifier_components,
+    score_probability,
+    score_with_study_classifier,
+)
 
 
 class StudyImageClassifierTest(unittest.TestCase):
@@ -31,6 +35,39 @@ class StudyImageClassifierTest(unittest.TestCase):
         self.assertEqual(result.scene_score, 0)
         self.assertEqual(result.forbidden_penalty, 0)
         self.assertEqual(result.reason, "fine_tuned_classifier=not_ready")
+
+    def test_classifier_allows_remote_model_download_by_default(self):
+        checkpoint = {
+            "input_dim": 2,
+            "clip_model_name": "openai/clip-vit-base-patch32",
+            "classifier_state_dict": {
+                "weight": Mock(),
+                "bias": Mock(),
+            },
+        }
+        get_classifier_components.cache_clear()
+        with (
+            patch("core.study_image_classifier.MODEL_PATH", Path("models/study_classifier.pt")),
+            patch("torch.load", return_value=checkpoint),
+            patch("torch.nn.Linear") as linear,
+            patch("transformers.CLIPModel.from_pretrained") as clip_from_pretrained,
+            patch("transformers.CLIPProcessor.from_pretrained") as processor_from_pretrained,
+        ):
+            linear.return_value.load_state_dict.return_value = None
+            linear.return_value.eval.return_value = None
+            clip_from_pretrained.return_value.eval.return_value = None
+
+            get_classifier_components()
+
+        clip_from_pretrained.assert_called_once_with(
+            "openai/clip-vit-base-patch32",
+            local_files_only=False,
+        )
+        processor_from_pretrained.assert_called_once_with(
+            "openai/clip-vit-base-patch32",
+            local_files_only=False,
+        )
+        get_classifier_components.cache_clear()
 
 
 if __name__ == "__main__":

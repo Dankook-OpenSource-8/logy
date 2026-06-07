@@ -62,20 +62,25 @@ def score_probability(study_probability: float) -> tuple[int, int]:
     return scene_score, 0
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @lru_cache
 def get_classifier_components():
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
     import torch
     from transformers import CLIPModel, CLIPProcessor
 
     checkpoint = torch.load(MODEL_PATH, map_location="cpu")
     input_dim = checkpoint["input_dim"]
     model_name = checkpoint.get("clip_model_name", "openai/clip-vit-base-patch32")
+    local_files_only = _env_bool("STUDY_CLASSIFIER_LOCAL_FILES_ONLY", False)
 
-    clip_model = CLIPModel.from_pretrained(model_name, local_files_only=True)
-    processor = CLIPProcessor.from_pretrained(model_name, local_files_only=True)
+    clip_model = CLIPModel.from_pretrained(model_name, local_files_only=local_files_only)
+    processor = CLIPProcessor.from_pretrained(model_name, local_files_only=local_files_only)
     classifier_head = torch.nn.Linear(input_dim, 2)
     classifier_head.load_state_dict(checkpoint["classifier_state_dict"])
 
