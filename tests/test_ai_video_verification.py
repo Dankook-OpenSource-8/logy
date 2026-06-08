@@ -9,6 +9,7 @@ from core.ai_video_verification import (
     FRAME_TIMESTAMPS,
     OCR_MAX_DIMENSION,
     FrameVerificationResult,
+    extract_text,
     has_ocr_timeout,
     prepare_ocr_image,
     select_best_verification_frame,
@@ -33,6 +34,29 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         self.assertNotEqual(ocr_path, frame_path)
         self.assertLessEqual(max(width, height), OCR_MAX_DIMENSION)
+
+    def test_extract_text_uses_external_ocr_server_when_configured(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            Image.new("RGB", (320, 240), color="white").save(frame_path)
+
+            class FakeResponse:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {"text": "데이터베이스 메모리 주소"}
+
+            with (
+                patch.dict("os.environ", {"OCR_SERVER_URL": "https://ocr.test"}, clear=False),
+                patch("httpx.post", return_value=FakeResponse()) as post,
+                patch("core.ai_video_verification.read_ocr_text_with_timeout") as local_ocr,
+            ):
+                text = extract_text(frame_path)
+
+        self.assertEqual(text, "데이터베이스 메모리 주소")
+        post.assert_called_once()
+        local_ocr.assert_not_called()
 
     def test_missing_fine_tuned_classifier_does_not_pollute_reason(self):
         with tempfile.TemporaryDirectory() as temp_dir:
