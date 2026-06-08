@@ -23,10 +23,30 @@ async def read_ocr(file: UploadFile = File(...)) -> dict[str, object]:
     with NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
         temp_file.write(await file.read())
         temp_file.flush()
-        texts = reader.readtext(temp_file.name, detail=0)
+        texts, error = read_text_safely(temp_file.name)
 
     return {
         "text": " ".join(text for text in texts if text),
         "texts": [text for text in texts if text],
         "elapsed_seconds": round(time.perf_counter() - started_at, 2),
+        "error": error,
     }
+
+
+def read_text_safely(image_path: str) -> tuple[list[str], str | None]:
+    try:
+        return reader.readtext(image_path, detail=0), None
+    except Exception as first_error:
+        try:
+            texts = reader.readtext(
+                image_path,
+                detail=0,
+                canvas_size=1280,
+                min_size=40,
+                bbox_min_size=12,
+                text_threshold=0.6,
+                low_text=0.3,
+            )
+            return texts, f"retried_after={type(first_error).__name__}"
+        except Exception as second_error:
+            return [], f"{type(first_error).__name__}: {first_error}; retry={type(second_error).__name__}: {second_error}"
