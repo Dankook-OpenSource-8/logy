@@ -16,6 +16,10 @@ class NotificationSettingsTest(unittest.TestCase):
     def test_weekdays_are_sorted_and_deduplicated_for_storage(self):
         self.assertEqual(_notification_weekdays_to_db([4, 1, 1, 0]), "0,1,4")
 
+    def test_empty_weekdays_are_stored_as_empty_string(self):
+        self.assertEqual(_notification_weekdays_to_db([]), "")
+        self.assertEqual(_notification_weekdays_to_db(None), "")
+
     def test_invalid_weekday_is_rejected(self):
         with self.assertRaises(HTTPException):
             _notification_weekdays_to_db([0, 7])
@@ -32,6 +36,19 @@ class NotificationSettingsTest(unittest.TestCase):
         self.assertTrue(payload.reward_enabled)
         self.assertFalse(payload.quiet_hours_enabled)
         self.assertEqual(payload.quiet_weekdays, [0, 1, 2, 3, 4])
+
+    def test_update_request_accepts_empty_quiet_values_when_disabled(self):
+        payload = NotificationSettingsUpdateRequest(
+            quiet_hours_enabled=False,
+            quiet_start_time="",
+            quiet_end_time="",
+            quiet_weekdays="",
+        )
+
+        self.assertFalse(payload.quiet_hours_enabled)
+        self.assertIsNone(payload.quiet_start_time)
+        self.assertIsNone(payload.quiet_end_time)
+        self.assertEqual(payload.quiet_weekdays, [])
 
     def test_response_uses_frontend_friendly_field_names(self):
         now = datetime(2026, 6, 8, 15, 0, tzinfo=timezone.utc)
