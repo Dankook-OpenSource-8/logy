@@ -48,6 +48,7 @@ from db.models import (
     StudySessionRest,
     User,
     UserFurniturePieceProgress,
+    UserNotificationSetting,
     UserPet,
     UserPushToken,
 )
@@ -70,6 +71,8 @@ from schemas import (
     FocusAnalyticsResponse,
 
     NicknameCheckResponse,
+    NotificationSettingsResponse,
+    NotificationSettingsUpdateRequest,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
     FurniturePlacementRequest,
@@ -127,6 +130,65 @@ def _is_duplicate_nickname_error(error: IntegrityError) -> bool:
         return "nickname" in error_message or "users_nickname" in error_message
 
     return "unique" in error_message and "nickname" in error_message
+
+
+def _notification_weekdays_to_list(value: str | None) -> list[int]:
+    if not value:
+        return []
+
+    weekdays = []
+    for item in value.split(","):
+        item = item.strip()
+        if item.isdigit():
+            weekday = int(item)
+            if 0 <= weekday <= 6 and weekday not in weekdays:
+                weekdays.append(weekday)
+    return weekdays
+
+
+def _notification_weekdays_to_db(weekdays: list[int]) -> str:
+    normalized_weekdays = sorted(set(weekdays))
+    if any(weekday < 0 or weekday > 6 for weekday in normalized_weekdays):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="반복 요일은 0부터 6 사이의 숫자만 입력할 수 있습니다",
+        )
+    return ",".join(str(weekday) for weekday in normalized_weekdays)
+
+
+def _get_or_create_notification_setting(db: Session, user: User) -> UserNotificationSetting:
+    setting = (
+        db.query(UserNotificationSetting)
+        .filter(UserNotificationSetting.user_id == user.id)
+        .first()
+    )
+    if setting is not None:
+        return setting
+
+    setting = UserNotificationSetting(user_id=user.id)
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+def _notification_settings_response(
+    setting: UserNotificationSetting,
+    message: str | None = None,
+) -> NotificationSettingsResponse:
+    return NotificationSettingsResponse(
+        message=message,
+        allNotificationsEnabled=setting.all_notifications_enabled,
+        randomAuthEnabled=setting.random_auth_enabled,
+        groupEnabled=setting.group_enabled,
+        rewardEnabled=setting.reward_enabled,
+        quietHoursEnabled=setting.quiet_hours_enabled,
+        quietStartTime=setting.quiet_start_time,
+        quietEndTime=setting.quiet_end_time,
+        quietWeekdays=_notification_weekdays_to_list(setting.quiet_weekdays),
+        createdAt=setting.created_at,
+        updatedAt=setting.updated_at,
+    )
 
 
 def _study_session_response(study_session: StudySession) -> StudySessionResponse:
@@ -897,6 +959,52 @@ def register_push_token(
         message="푸시 토큰 저장",
         push_token_id=push_token.id,
     )
+
+
+@router.get("/users/notification-settings", response_model=NotificationSettingsResponse)
+def get_notification_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationSettingsResponse:
+    setting = _get_or_create_notification_setting(db, current_user)
+    return _notification_settings_response(setting)
+
+
+@router.put("/users/notification-settings", response_model=NotificationSettingsResponse)
+def update_notification_settings(
+    payload: NotificationSettingsUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationSettingsResponse:
+    setting = _get_or_create_notification_setting(db, current_user)
+    if payload.quiet_hours_enabled and (
+        payload.quiet_start_time is None or payload.quiet_end_time is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="방해 금지 시간을 사용할 경우 시작 시간과 종료 시간을 모두 입력해주세요",
+        )
+
+    setting.all_notifications_enabled = payload.all_notifications_enabled
+    setting.random_auth_enabled = payload.random_auth_enabled
+    setting.group_enabled = payload.group_enabled
+    setting.reward_enabled = payload.reward_enabled
+    setting.quiet_hours_enabled = payload.quiet_hours_enabled
+    setting.quiet_start_time = payload.quiet_start_time
+    setting.quiet_end_time = payload.quiet_end_time
+    setting.quiet_weekdays = _notification_weekdays_to_db(payload.quiet_weekdays)
+
+    try:
+        db.commit()
+        db.refresh(setting)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="알림 설정을 저장하지 못했습니다",
+        ) from None
+
+    return _notification_settings_response(setting, "알림 설정 저장")
 
 
 @router.get("/rewards/me", response_model=RewardStateResponse)

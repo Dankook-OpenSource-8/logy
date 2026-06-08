@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -333,6 +333,31 @@ class PushTokenRegisterRequest(BaseModel):
 class PushTokenRegisterResponse(BaseModel):
     message: str
     push_token_id: int
+
+
+class NotificationSettingsUpdateRequest(BaseModel):
+    all_notifications_enabled: bool = True
+    random_auth_enabled: bool = True
+    group_enabled: bool = True
+    reward_enabled: bool = True
+    quiet_hours_enabled: bool = False
+    quiet_start_time: time | None = None
+    quiet_end_time: time | None = None
+    quiet_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+
+
+class NotificationSettingsResponse(BaseModel):
+    message: str | None = None
+    allNotificationsEnabled: bool
+    randomAuthEnabled: bool
+    groupEnabled: bool
+    rewardEnabled: bool
+    quietHoursEnabled: bool
+    quietStartTime: time | None
+    quietEndTime: time | None
+    quietWeekdays: list[int]
+    createdAt: datetime
+    updatedAt: datetime
 
 
 class GroupCreateRequest(BaseModel):
