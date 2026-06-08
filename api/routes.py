@@ -145,8 +145,8 @@ def _notification_weekdays_to_list(value: str | None) -> list[int]:
     return weekdays
 
 
-def _notification_weekdays_to_db(weekdays: list[int]) -> str:
-    normalized_weekdays = sorted(set(weekdays))
+def _notification_weekdays_to_db(weekdays: list[int] | None) -> str:
+    normalized_weekdays = sorted(set(weekdays or []))
     if any(weekday < 0 or weekday > 6 for weekday in normalized_weekdays):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -989,9 +989,19 @@ def update_notification_settings(
     setting.group_enabled = payload.group_enabled
     setting.reward_enabled = payload.reward_enabled
     setting.quiet_hours_enabled = payload.quiet_hours_enabled
-    setting.quiet_start_time = payload.quiet_start_time
-    setting.quiet_end_time = payload.quiet_end_time
-    setting.quiet_weekdays = _notification_weekdays_to_db(payload.quiet_weekdays)
+    if payload.quiet_hours_enabled:
+        if not payload.quiet_weekdays:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="방해 금지 시간을 사용할 경우 반복 요일을 1개 이상 선택해주세요",
+            )
+        setting.quiet_start_time = payload.quiet_start_time
+        setting.quiet_end_time = payload.quiet_end_time
+        setting.quiet_weekdays = _notification_weekdays_to_db(payload.quiet_weekdays)
+    else:
+        setting.quiet_start_time = None
+        setting.quiet_end_time = None
+        setting.quiet_weekdays = ""
 
     try:
         db.commit()

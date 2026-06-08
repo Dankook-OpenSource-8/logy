@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserSignupRequest(BaseModel):
@@ -344,6 +344,22 @@ class NotificationSettingsUpdateRequest(BaseModel):
     quiet_start_time: time | None = None
     quiet_end_time: time | None = None
     quiet_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+
+    @field_validator("quiet_start_time", "quiet_end_time", mode="before")
+    @classmethod
+    def empty_time_to_none(cls, value):
+        if value == "":
+            return None
+        return value
+
+    @field_validator("quiet_weekdays", mode="before")
+    @classmethod
+    def empty_weekdays_to_list(cls, value):
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [weekday for weekday in value if weekday != "" and weekday is not None]
+        return value
 
 
 class NotificationSettingsResponse(BaseModel):
