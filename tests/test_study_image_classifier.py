@@ -25,9 +25,15 @@ class StudyImageClassifierTest(unittest.TestCase):
         self.assertEqual((low_scene_score, low_penalty), (0, 0))
 
     def test_score_probability_requires_study_threshold(self):
-        scene_score, forbidden_penalty = score_probability(0.39)
+        scene_score, forbidden_penalty = score_probability(0.49)
 
         self.assertEqual(scene_score, 0)
+        self.assertEqual(forbidden_penalty, 0)
+
+    def test_score_probability_accepts_probability_at_threshold(self):
+        scene_score, forbidden_penalty = score_probability(0.5)
+
+        self.assertEqual(scene_score, 30)
         self.assertEqual(forbidden_penalty, 0)
 
     def test_missing_model_returns_unavailable_result(self):
