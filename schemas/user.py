@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class UserSignupRequest(BaseModel):
@@ -336,14 +336,38 @@ class PushTokenRegisterResponse(BaseModel):
 
 
 class NotificationSettingsUpdateRequest(BaseModel):
-    all_notifications_enabled: bool = True
-    random_auth_enabled: bool = True
-    group_enabled: bool = True
-    reward_enabled: bool = True
-    quiet_hours_enabled: bool = False
-    quiet_start_time: time | None = None
-    quiet_end_time: time | None = None
-    quiet_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+    all_notifications_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("all_notifications_enabled", "allNotificationsEnabled"),
+    )
+    random_auth_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("random_auth_enabled", "randomAuthEnabled"),
+    )
+    group_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("group_enabled", "groupEnabled"),
+    )
+    reward_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("reward_enabled", "rewardEnabled"),
+    )
+    quiet_hours_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("quiet_hours_enabled", "quietHoursEnabled"),
+    )
+    quiet_start_time: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("quiet_start_time", "quietStartTime"),
+    )
+    quiet_end_time: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("quiet_end_time", "quietEndTime"),
+    )
+    quiet_weekdays: list[int] = Field(
+        default_factory=lambda: [0, 1, 2, 3, 4],
+        validation_alias=AliasChoices("quiet_weekdays", "quietWeekdays"),
+    )
 
     @field_validator("quiet_start_time", "quiet_end_time", mode="before")
     @classmethod

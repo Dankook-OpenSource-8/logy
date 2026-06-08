@@ -50,6 +50,23 @@ class NotificationSettingsTest(unittest.TestCase):
         self.assertIsNone(payload.quiet_end_time)
         self.assertEqual(payload.quiet_weekdays, [])
 
+    def test_update_request_accepts_frontend_camel_case_empty_quiet_values(self):
+        payload = NotificationSettingsUpdateRequest.model_validate({
+            "allNotificationsEnabled": True,
+            "randomAuthEnabled": True,
+            "groupEnabled": True,
+            "rewardEnabled": True,
+            "quietHoursEnabled": False,
+            "quietStartTime": "",
+            "quietEndTime": "",
+            "quietWeekdays": [],
+        })
+
+        self.assertFalse(payload.quiet_hours_enabled)
+        self.assertIsNone(payload.quiet_start_time)
+        self.assertIsNone(payload.quiet_end_time)
+        self.assertEqual(payload.quiet_weekdays, [])
+
     def test_response_uses_frontend_friendly_field_names(self):
         now = datetime(2026, 6, 8, 15, 0, tzinfo=timezone.utc)
         setting = SimpleNamespace(
