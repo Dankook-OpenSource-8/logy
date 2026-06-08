@@ -31,6 +31,7 @@ from core.study_archive import (
     build_weekly_archive,
 )
 from core.storage import upload_video
+from core.timezone import app_date, app_day_bounds, app_now_date
 from db.database import SessionLocal, get_db
 from db.models import (
     AuthLog,
@@ -278,8 +279,7 @@ def _study_session_or_404(db: Session, study_session_id: int, user_id) -> StudyS
 
 
 def _today_rest_bounds(now: datetime) -> tuple[datetime, datetime]:
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return day_start, day_start + timedelta(days=1)
+    return app_day_bounds(app_date(now))
 
 
 def _daily_rest_logs(db: Session, user_id, now: datetime) -> list[StudySessionRest]:
@@ -341,7 +341,7 @@ def _archive_date_bounds(
     start_date: date | None,
     end_date: date | None,
 ) -> tuple[date, date, datetime, datetime]:
-    range_end = end_date or datetime.now(timezone.utc).date()
+    range_end = end_date or app_now_date()
     range_start = start_date or (range_end - timedelta(days=29))
     if range_start > range_end:
         raise HTTPException(
@@ -349,8 +349,8 @@ def _archive_date_bounds(
             detail="start_date는 end_date보다 늦을 수 없습니다",
         )
 
-    start_at = datetime.combine(range_start, datetime.min.time(), tzinfo=timezone.utc)
-    end_at = datetime.combine(range_end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    start_at, _ = app_day_bounds(range_start)
+    _, end_at = app_day_bounds(range_end)
     return range_start, range_end, start_at, end_at
 
 
@@ -636,10 +636,11 @@ def _settle_success_reward(
 
     verified_seconds = _verified_seconds_for_auth(db, auth_log, study_session)
     pet_exp = pet_exp_from_verified_seconds(verified_seconds)
+    reward_date = app_date(auth_log.verified_at) if auth_log.verified_at else app_now_date()
     attendance = attendance_reward(
         user.last_attendance_date,
         user.streak_days or 0,
-        auth_log.verified_at.date() if auth_log.verified_at else datetime.now(timezone.utc).date(),
+        reward_date,
     )
 
     pet = _get_or_create_user_pet(db, user)
@@ -648,7 +649,7 @@ def _settle_success_reward(
 
     if attendance.is_first_attendance_today:
         user.streak_days = attendance.streak_days
-        user.last_attendance_date = auth_log.verified_at.date()
+        user.last_attendance_date = reward_date
 
     auth_minutes = verified_seconds // 60
     progress_percent = furniture_progress_from_auth_minutes(auth_minutes)
