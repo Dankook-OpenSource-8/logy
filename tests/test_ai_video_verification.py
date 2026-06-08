@@ -115,6 +115,34 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(result.forbidden_penalty, 30)
         self.assertEqual(result.total_score, 72)
 
+    def test_second_frame_is_skipped_when_first_frame_passes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_frame = Path(temp_dir) / "frame_1_5.jpg"
+            second_frame = Path(temp_dir) / "frame_3_5.jpg"
+            first_frame.write_bytes(b"fake-1")
+            second_frame.write_bytes(b"fake-2")
+
+            with (
+                patch("core.ai_video_verification.score_frame_quality", return_value=10),
+                patch("core.ai_video_verification.extract_text", return_value="computer architecture memory") as extract_text,
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(40, "subject evidence")),
+                patch(
+                    "core.ai_video_verification.score_with_study_classifier",
+                    return_value=StudyClassifierResult(
+                        available=True,
+                        study_probability=0.9,
+                        scene_score=35,
+                        forbidden_penalty=0,
+                        reason="fine_tuned_study_probability=0.90",
+                    ),
+                ),
+            ):
+                result = select_best_verification_frame([first_frame, second_frame], "컴퓨터구조")
+
+        self.assertEqual(result.frame_path, first_frame)
+        self.assertEqual(result.total_score, 75)
+        extract_text.assert_called_once_with(first_frame)
+
     def test_ocr_timeout_reason_is_detected_for_retake(self):
         self.assertTrue(
             has_ocr_timeout("OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. (OCRTimeout: OCR 처리 시간이 40초를 초과했습니다.)")
