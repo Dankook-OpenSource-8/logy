@@ -18,6 +18,8 @@ from schemas.user import (
     FocusAnalyticsResponse,
 
     NicknameCheckResponse,
+    NotificationSettingsResponse,
+    NotificationSettingsUpdateRequest,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
     FurnitureItemProgressResponse,
@@ -67,6 +69,8 @@ __all__ = [
     "FocusAnalyticsResponse",
 
     "NicknameCheckResponse",
+    "NotificationSettingsResponse",
+    "NotificationSettingsUpdateRequest",
     "PushTokenRegisterRequest",
     "PushTokenRegisterResponse",
     "FurnitureItemProgressResponse",
