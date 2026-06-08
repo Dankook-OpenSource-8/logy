@@ -8,9 +8,11 @@ from PIL import Image
 from core.ai_video_verification import (
     FRAME_TIMESTAMPS,
     OCR_MAX_DIMENSION,
+    FrameVerificationResult,
     has_ocr_timeout,
     prepare_ocr_image,
     select_best_verification_frame,
+    verify_study_video,
 )
 from core.study_image_classifier import StudyClassifierResult
 
@@ -118,6 +120,61 @@ class AiVideoVerificationTest(unittest.TestCase):
             has_ocr_timeout("OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. (OCRTimeout: OCR 처리 시간이 40초를 초과했습니다.)")
         )
         self.assertFalse(has_ocr_timeout("OCR 텍스트가 없습니다."))
+
+    def test_video_verification_approves_from_65_points(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+            frame_result = FrameVerificationResult(
+                frame_path=frame_path,
+                total_score=65,
+                scene_score=35,
+                text_score=30,
+                quality_score=10,
+                forbidden_penalty=0,
+                scene_reason="scene",
+                text_reason="text",
+                classifier_reason="classifier",
+            )
+
+            with (
+                patch("core.ai_video_verification.download_video"),
+                patch("core.ai_video_verification.extract_candidate_frames", return_value=[frame_path]),
+                patch("core.ai_video_verification.select_best_verification_frame", return_value=frame_result),
+                patch("core.ai_video_verification.time.monotonic", side_effect=[0, 20]),
+            ):
+                result = verify_study_video("https://storage.test/video.mp4", "데이터베이스")
+
+        self.assertTrue(result.approved)
+        self.assertEqual(result.status, "성공")
+
+    def test_video_verification_requests_retake_after_total_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+            frame_result = FrameVerificationResult(
+                frame_path=frame_path,
+                total_score=90,
+                scene_score=55,
+                text_score=35,
+                quality_score=10,
+                forbidden_penalty=0,
+                scene_reason="scene",
+                text_reason="text",
+                classifier_reason="classifier",
+            )
+
+            with (
+                patch("core.ai_video_verification.download_video"),
+                patch("core.ai_video_verification.extract_candidate_frames", return_value=[frame_path]),
+                patch("core.ai_video_verification.select_best_verification_frame", return_value=frame_result),
+                patch("core.ai_video_verification.time.monotonic", side_effect=[0, 61]),
+            ):
+                result = verify_study_video("https://storage.test/video.mp4", "데이터베이스")
+
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "실패")
+        self.assertIn("재인증", result.reason)
 
 
 if __name__ == "__main__":
