@@ -59,7 +59,7 @@ class StudyArchiveTest(unittest.TestCase):
     def test_daily_archive_groups_sessions_by_date(self):
         sessions = [
             make_session(1, 18, 9, "completed", 60),
-            make_session(2, 18, 21, "failed", 10),
+            make_session(2, 18, 12, "failed", 10),
             make_session(3, 19, 9, "completed", 30),
         ]
 
@@ -69,11 +69,28 @@ class StudyArchiveTest(unittest.TestCase):
         self.assertEqual(result[0]["date"].isoformat(), "2026-05-19")
         self.assertEqual(result[1]["sessionCount"], 2)
 
+    def test_daily_archive_uses_korea_date_for_early_morning_records(self):
+        utc_afternoon = datetime(2026, 6, 7, 16, 30, tzinfo=timezone.utc)
+        session = ArchiveSession(
+            study_session_id=1,
+            subject="데이터베이스",
+            goal_note=None,
+            start_time=utc_afternoon,
+            end_time=utc_afternoon + timedelta(minutes=30),
+            total_seconds=1800,
+            status="completed",
+            auth_logs=[],
+        )
+
+        result = build_daily_archive([session])
+
+        self.assertEqual(result[0]["date"].isoformat(), "2026-06-08")
+
     def test_daily_archive_sums_study_seconds(self):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60),
-                make_session(2, 18, 21, "failed", 10),
+                make_session(2, 18, 12, "failed", 10),
             ]
         )
 
@@ -83,8 +100,8 @@ class StudyArchiveTest(unittest.TestCase):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60),
-                make_session(2, 18, 21, "failed", 10),
-                make_session(3, 18, 22, "cancelled", 5),
+                make_session(2, 18, 12, "failed", 10),
+                make_session(3, 18, 13, "cancelled", 5),
             ]
         )
 
@@ -95,7 +112,7 @@ class StudyArchiveTest(unittest.TestCase):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60, ["성공", "성공"]),
-                make_session(2, 18, 21, "failed", 10, ["실패", "시간초과", "대기"]),
+                make_session(2, 18, 12, "failed", 10, ["실패", "시간초과", "대기"]),
             ]
         )
 
@@ -117,7 +134,7 @@ class StudyArchiveTest(unittest.TestCase):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60),
-                make_session(2, 18, 21, "completed", 20),
+                make_session(2, 18, 12, "completed", 20),
             ]
         )
 
