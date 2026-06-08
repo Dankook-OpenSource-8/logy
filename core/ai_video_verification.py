@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import tempfile
+import time
 import urllib.request
 import uuid
 import os
@@ -14,7 +15,8 @@ from core.study_image_classifier import score_with_study_classifier
 FRAME_TIMESTAMPS = (1.5, 3.5)
 OCR_MAX_DIMENSION = 960
 OCR_TIMEOUT_SECONDS = 40
-APPROVAL_THRESHOLD = 70
+VERIFICATION_TIMEOUT_SECONDS = 60
+APPROVAL_THRESHOLD = 65
 RETAKE_THRESHOLD = 50
 SCENE_SCORE_MAX = 60
 TEXT_SCORE_MAX = 40
@@ -378,6 +380,7 @@ def _short_error(error: Exception) -> str:
 
 
 def verify_study_video(video_url: str, subject: str | None) -> VerificationResult:
+    started_at = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="logy_verify_") as temp_dir:
         work_dir = Path(temp_dir)
         video_path = work_dir / "source_video"
@@ -407,9 +410,13 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
         text_reason = frame_result.text_reason
         classifier_reason = frame_result.classifier_reason
         total_score = frame_result.total_score
+        elapsed_seconds = time.monotonic() - started_at
 
-        approved = total_score >= APPROVAL_THRESHOLD
-        if has_ocr_timeout(text_reason):
+        needs_retake_for_timeout = elapsed_seconds >= VERIFICATION_TIMEOUT_SECONDS
+        approved = total_score >= APPROVAL_THRESHOLD and not needs_retake_for_timeout
+        if needs_retake_for_timeout:
+            reason = "인증 처리 시간이 초과되어 재인증이 필요합니다."
+        elif has_ocr_timeout(text_reason):
             reason = "OCR 처리 시간이 초과되어 재촬영이 필요합니다."
         elif total_score >= APPROVAL_THRESHOLD:
             reason = "학습 장면 맥락과 과목 관련성이 충분합니다."
