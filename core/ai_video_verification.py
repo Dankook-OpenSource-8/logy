@@ -15,6 +15,7 @@ from core.study_image_classifier import score_with_study_classifier
 FRAME_TIMESTAMPS = (1.5, 3.5)
 OCR_MAX_DIMENSION = 960
 OCR_TIMEOUT_SECONDS = 40
+OCR_SERVER_TIMEOUT_SECONDS = 45
 VERIFICATION_TIMEOUT_SECONDS = 60
 APPROVAL_THRESHOLD = 65
 RETAKE_THRESHOLD = 50
@@ -644,6 +645,10 @@ def extract_text(frame_path: Path) -> str:
 
     try:
         ocr_image_path = prepare_ocr_image(frame_path)
+        server_text = read_text_from_ocr_server(ocr_image_path)
+        if server_text is not None:
+            return server_text
+
         result = read_ocr_text_with_timeout(ocr_image_path, OCR_TIMEOUT_SECONDS)
         return " ".join(text for text in result if text)
     except Exception as exc:
@@ -704,6 +709,45 @@ def read_ocr_text_with_timeout(ocr_image_path: Path, timeout_seconds: int) -> li
 
     _ocr_error = payload
     return []
+
+
+def read_text_from_ocr_server(ocr_image_path: Path) -> str | None:
+    global _ocr_error
+
+    server_url = os.getenv("OCR_SERVER_URL", "").strip().rstrip("/")
+    if not server_url:
+        return None
+
+    endpoint = server_url if server_url.endswith("/ocr") else f"{server_url}/ocr"
+    timeout_seconds = int(os.getenv("OCR_SERVER_TIMEOUT_SECONDS", str(OCR_SERVER_TIMEOUT_SECONDS)))
+    try:
+        import httpx
+
+        with ocr_image_path.open("rb") as image_file:
+            response = httpx.post(
+                endpoint,
+                files={"file": (ocr_image_path.name, image_file, "image/jpeg")},
+                timeout=timeout_seconds,
+            )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        _ocr_error = f"OCRServerError: {_short_error(exc)}"
+        return ""
+
+    if isinstance(payload, dict):
+        text = payload.get("text")
+        if isinstance(text, str):
+            _ocr_error = None
+            return text.strip()
+
+        texts = payload.get("texts")
+        if isinstance(texts, list):
+            _ocr_error = None
+            return " ".join(str(item) for item in texts if item).strip()
+
+    _ocr_error = "OCRServerError: OCR 서버 응답 형식이 올바르지 않습니다."
+    return ""
 
 
 def _read_ocr_text_worker(image_path: str, result_queue) -> None:
