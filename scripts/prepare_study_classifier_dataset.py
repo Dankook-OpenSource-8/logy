@@ -22,8 +22,8 @@ def main() -> None:
     parser.add_argument("--val-ratio", type=float, default=0.2)
     args = parser.parse_args()
 
-    if not 0.0 < args.val_ratio < 1.0:
-        raise SystemExit("val-ratio는 0과 1 사이 값이어야 합니다.")
+    if not 0.0 <= args.val_ratio < 1.0:
+        raise SystemExit("val-ratio는 0 이상 1 미만 값이어야 합니다.")
 
     reset_split_dirs()
     study_counts = copy_split(args.study_dir, "study", args.val_ratio)
@@ -55,7 +55,7 @@ def copy_split(source_dir: Path, label: str, val_ratio: float) -> tuple[int, int
 
     shuffled_images = images[:]
     random.Random(RANDOM_SEED).shuffle(shuffled_images)
-    val_count = max(1, round(len(shuffled_images) * val_ratio))
+    val_count = round(len(shuffled_images) * val_ratio)
     val_images = set(shuffled_images[:val_count])
 
     train_total = 0
