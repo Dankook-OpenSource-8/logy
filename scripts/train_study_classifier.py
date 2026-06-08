@@ -28,8 +28,6 @@ def main() -> None:
     val_samples = collect_samples(DATASET_DIR / "val")
     if not train_samples:
         raise SystemExit("train 폴더에 학습 이미지가 없습니다.")
-    if not val_samples:
-        raise SystemExit("val 폴더에 검증 이미지가 없습니다.")
 
     device = select_device(torch)
     print(f"device={device}")
@@ -41,9 +39,11 @@ def main() -> None:
         parameter.requires_grad = False
 
     train_dataset = StudyImageDataset(train_samples, processor)
-    val_dataset = StudyImageDataset(val_samples, processor)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+    val_loader = None
+    if val_samples:
+        val_dataset = StudyImageDataset(val_samples, processor)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
     input_dim = clip_model.config.projection_dim
     classifier_head = torch.nn.Linear(input_dim, 2).to(device)
@@ -65,12 +65,15 @@ def main() -> None:
             torch,
             device,
         )
-        val_accuracy, confusion = evaluate(clip_model, classifier_head, val_loader, torch, device)
+        if val_loader is not None:
+            val_accuracy, confusion = evaluate(clip_model, classifier_head, val_loader, torch, device)
+        else:
+            val_accuracy, confusion = 0.0, {"tp": 0, "tn": 0, "fp": 0, "fn": 0}
         print(
             f"epoch={epoch} train_loss={train_loss:.4f} "
             f"val_accuracy={val_accuracy:.3f} confusion={confusion}"
         )
-        if val_accuracy >= best_val_accuracy:
+        if val_loader is None or val_accuracy >= best_val_accuracy:
             best_val_accuracy = val_accuracy
             best_confusion = confusion
             best_state_dict = copy.deepcopy(classifier_head.state_dict())
