@@ -9,7 +9,7 @@ DATASET_DIR = Path("data/study_classifier")
 OUTPUT_PATH = Path("models/study_classifier.pt")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 LABELS = {"non_study": 0, "study": 1}
-EPOCHS = 10
+EPOCHS = 15
 BATCH_SIZE = 8
 RANDOM_SEED = 42
 
