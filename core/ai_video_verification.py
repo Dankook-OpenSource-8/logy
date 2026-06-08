@@ -521,19 +521,21 @@ def select_best_verification_frame(
         if has_strong_study_evidence(text_score):
             total_score = max(total_score, 72)
 
-        results.append(
-            FrameVerificationResult(
-                frame_path=frame_path,
-                total_score=total_score,
-                scene_score=scene_score,
-                text_score=text_score,
-                quality_score=quality_score,
-                forbidden_penalty=forbidden_penalty,
-                scene_reason=scene_reason,
-                text_reason=text_reason,
-                classifier_reason=classifier_reason,
-            )
+        frame_result = FrameVerificationResult(
+            frame_path=frame_path,
+            total_score=total_score,
+            scene_score=scene_score,
+            text_score=text_score,
+            quality_score=quality_score,
+            forbidden_penalty=forbidden_penalty,
+            scene_reason=scene_reason,
+            text_reason=text_reason,
+            classifier_reason=classifier_reason,
         )
+        if frame_result.total_score >= APPROVAL_THRESHOLD:
+            return frame_result
+
+        results.append(frame_result)
 
     results.sort(key=lambda result: (result.total_score, result.quality_score), reverse=True)
     return results[0]
