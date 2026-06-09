@@ -168,6 +168,7 @@ def _video_extension(content_type: str, filename: str | None) -> str:
 
 
 def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
+    next_auth_time = auth_log.session.next_auth_time if auth_log.session else None
     return VideoVerificationResultResponse(
         auth_log_id=auth_log.id,
         study_session_id=auth_log.study_session_id,
@@ -182,6 +183,7 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         representative_frame_path=auth_log.representative_frame_path,
         created_at=auth_log.created_at,
         verified_at=auth_log.verified_at,
+        auth_expires_at=auth_expires_at(next_auth_time) if next_auth_time else None,
     )
 
 
@@ -1825,4 +1827,8 @@ async def upload_auth_video(
     file_path = f"{current_user.id}_{timestamp}{_video_extension(content_type, video.filename)}"
     video_url = upload_video(file_path, file_bytes, content_type)
 
-    return VideoUploadResponse(message="영상 업로드 완료", video_url=video_url)
+    return VideoUploadResponse(
+        message="영상 업로드 완료",
+        video_url=video_url,
+        auth_expires_at=auth_expires_at(study_session.next_auth_time),
+    )
