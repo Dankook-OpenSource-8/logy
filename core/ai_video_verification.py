@@ -13,7 +13,7 @@ from pathlib import Path
 from core.study_image_classifier import score_with_study_classifier
 
 
-FRAME_TIMESTAMPS = (1.5, 3.5)
+FRAME_TIMESTAMPS = (2.0,)
 OCR_MAX_DIMENSION = 960
 OCR_TIMEOUT_SECONDS = 40
 OCR_SERVER_TIMEOUT_SECONDS = 45
