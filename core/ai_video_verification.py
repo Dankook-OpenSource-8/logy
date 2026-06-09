@@ -25,6 +25,7 @@ TEXT_SCORE_MAX = 40
 DEFAULT_TEXT_SCORE = 0
 STRONG_TEXT_SCORE = 36
 EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
 
 STUDY_PROMPTS = (
     "a person studying with books and notes",
@@ -1636,12 +1637,13 @@ def get_clip_components():
 
         local_files_only = _env_bool("CLIP_LOCAL_FILES_ONLY", False)
         _clip_torch = torch
+        model_name = os.getenv("CLIP_MODEL_NAME", CLIP_MODEL_NAME)
         _clip_model = CLIPModel.from_pretrained(
-            "openai/clip-vit-base-patch32",
+            model_name,
             local_files_only=local_files_only,
         )
         _clip_processor = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32",
+            model_name,
             local_files_only=local_files_only,
         )
         _clip_model.eval()

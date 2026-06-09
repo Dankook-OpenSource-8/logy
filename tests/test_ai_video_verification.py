@@ -21,6 +21,7 @@ from core.ai_video_verification import (
 )
 from api.routes import (
     _auth_log_allows_retake,
+    _refresh_auth_log_retake_window,
     _should_allow_auth_retake,
     _verification_result_response,
 )
@@ -330,6 +331,36 @@ class AiVideoVerificationTest(unittest.TestCase):
         )
 
         self.assertFalse(_auth_log_allows_retake(auth_log))
+
+    def test_expired_result_poll_refreshes_retake_window(self):
+        class FakeDb:
+            def __init__(self):
+                self.flushed = False
+
+            def flush(self):
+                self.flushed = True
+
+        old_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        now = old_auth_time + timedelta(seconds=90)
+        study_session = SimpleNamespace(
+            status=None,
+            end_time=now,
+            next_auth_time=old_auth_time,
+        )
+        auth_log = SimpleNamespace(
+            status="실패",
+            verification_reason="학습 여부가 애매하여 재인증이 필요합니다.",
+            error_message=None,
+            session=study_session,
+        )
+        db = FakeDb()
+
+        refreshed = _refresh_auth_log_retake_window(db, auth_log, now)
+
+        self.assertTrue(refreshed)
+        self.assertTrue(db.flushed)
+        self.assertEqual(study_session.next_auth_time, now)
+        self.assertIsNone(study_session.end_time)
 
     def test_low_score_failure_does_not_allow_retake_window(self):
         result = VerificationResult(

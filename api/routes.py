@@ -280,6 +280,13 @@ def _session_has_recent_retake_request(db: Session, study_session_id: int, user_
     return False
 
 
+def _reset_retake_window(db: Session, study_session: StudySession, now: datetime) -> None:
+    study_session.status = SessionStatus.active
+    study_session.end_time = None
+    study_session.next_auth_time = now
+    db.flush()
+
+
 def _reopen_expired_retake_window(
     db: Session,
     study_session: StudySession,
@@ -291,10 +298,20 @@ def _reopen_expired_retake_window(
     if not _session_has_recent_retake_request(db, study_session.id, user_id):
         return False
 
-    study_session.status = SessionStatus.active
-    study_session.end_time = None
-    study_session.next_auth_time = now
-    db.flush()
+    _reset_retake_window(db, study_session, now)
+    return True
+
+
+def _refresh_auth_log_retake_window(db: Session, auth_log: AuthLog, now: datetime) -> bool:
+    study_session = auth_log.session
+    if study_session is None:
+        return False
+    if not _auth_log_allows_retake(auth_log):
+        return False
+    if not is_auth_expired(now, study_session.next_auth_time):
+        return False
+
+    _reset_retake_window(db, study_session, now)
     return True
 
 
@@ -1508,6 +1525,14 @@ def get_active_study_session(
         .order_by(StudySession.start_time.desc())
         .first()
     )
+    if study_session is not None and _reopen_expired_retake_window(
+        db,
+        study_session,
+        current_user.id,
+        datetime.now(timezone.utc),
+    ):
+        db.commit()
+        db.refresh(study_session)
 
     return ActiveStudySessionResponse(
         active_session=_study_session_response(study_session) if study_session else None
@@ -1927,6 +1952,9 @@ def get_video_verification_result(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="영상 검증 로그를 찾을 수 없습니다",
         )
+    if _refresh_auth_log_retake_window(db, auth_log, datetime.now(timezone.utc)):
+        db.commit()
+        db.refresh(auth_log)
 
     return _verification_result_response(auth_log)
 
