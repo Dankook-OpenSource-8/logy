@@ -209,6 +209,36 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertLessEqual(score, 30)
         self.assertIn("subject_keyword_matches=1", reason)
 
+    def test_java_programming_uses_oop_keywords_for_subject_match(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.18):
+            score, reason = score_subject_similarity(
+                "자바 프로그래밍",
+                "Calculator 클래스에서 interface를 구현하고 상속 관계의 메서드 오버라이드를 확인했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
+
+    def test_discrete_math_uses_logic_and_set_keywords(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.16):
+            score, reason = score_subject_similarity(
+                "이산수학",
+                "명제 논리와 집합 관계 그래프 귀납법 문제를 정리했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
+
+    def test_formula_heavy_subject_rewards_math_notation(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.14):
+            score, reason = score_subject_similarity(
+                "미적분",
+                "lim x->0 f(x), x^2 + 3x, integral dx, sin theta 공식을 풀었습니다.",
+            )
+
+        self.assertGreaterEqual(score, 32)
+        self.assertIn("math_formula_evidence", reason)
+
     def test_video_verification_approves_from_65_points(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             frame_path = Path(temp_dir) / "frame.jpg"
