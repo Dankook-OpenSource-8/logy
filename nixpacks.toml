@@ -5,4 +5,4 @@ nixPkgs = ["...", "ffmpeg"]
 HF_HOME = "/app/.cache/huggingface"
 
 [phases.build]
-cmds = ["python scripts/preload_embedding_model.py"]
+cmds = ["PYTHONPATH=/app python scripts/preload_embedding_model.py"]
