@@ -80,6 +80,372 @@ SUBJECT_ALIASES = {
     "디지털논리": "digital logic boolean gate flip flop latch mux decoder encoder truth table karnaugh",
 }
 
+SUBJECT_CORE_KEYWORDS = {
+    "컴퓨터구조": {
+        "alu",
+        "cache",
+        "cpu",
+        "datapath",
+        "instruction",
+        "memory hierarchy",
+        "pipeline",
+        "register",
+        "명령어",
+        "메모리 계층",
+        "레지스터",
+        "캐시",
+        "파이프라인",
+    },
+    "자료구조": {
+        "array",
+        "bfs",
+        "dfs",
+        "graph",
+        "hash",
+        "heap",
+        "queue",
+        "stack",
+        "tree",
+        "그래프",
+        "스택",
+        "자료구조",
+        "큐",
+        "트리",
+        "해시",
+        "힙",
+    },
+    "알고리즘": {
+        "algorithm",
+        "dynamic programming",
+        "greedy",
+        "kruskal",
+        "mst",
+        "prim",
+        "shortest path",
+        "그리디",
+        "동적계획",
+        "알고리즘",
+        "최단경로",
+    },
+    "데이터베이스": {
+        "database",
+        "dbms",
+        "dml",
+        "ddl",
+        "erd",
+        "foreign key",
+        "index",
+        "primary key",
+        "query",
+        "relation",
+        "schema",
+        "sql",
+        "transaction",
+        "관계",
+        "데이터베이스",
+        "릴레이션",
+        "스키마",
+        "인덱스",
+        "정규화",
+        "질의",
+        "트랜잭션",
+    },
+    "선형대수": {
+        "basis",
+        "determinant",
+        "eigenvalue",
+        "linear",
+        "matrix",
+        "scalar",
+        "span",
+        "vector",
+        "기저",
+        "벡터",
+        "선형",
+        "스칼라",
+        "행렬",
+    },
+    "운영체제": {
+        "deadlock",
+        "kernel",
+        "mutex",
+        "paging",
+        "process",
+        "scheduler",
+        "semaphore",
+        "thread",
+        "virtual memory",
+        "가상메모리",
+        "교착",
+        "스레드",
+        "스케줄링",
+        "운영체제",
+        "커널",
+        "프로세스",
+        "페이징",
+    },
+    "컴퓨터네트워크": {
+        "dns",
+        "http",
+        "ip",
+        "network",
+        "packet",
+        "routing",
+        "socket",
+        "tcp",
+        "udp",
+        "네트워크",
+        "라우팅",
+        "소켓",
+        "패킷",
+    },
+    "네트워크": {
+        "dns",
+        "http",
+        "ip",
+        "network",
+        "packet",
+        "routing",
+        "socket",
+        "tcp",
+        "udp",
+        "네트워크",
+        "라우팅",
+        "소켓",
+        "패킷",
+    },
+    "소프트웨어공학": {
+        "agile",
+        "architecture",
+        "requirement",
+        "scrum",
+        "software engineering",
+        "testing",
+        "uml",
+        "use case",
+        "소프트웨어공학",
+        "요구사항",
+        "테스트",
+    },
+    "웹프로그래밍": {
+        "api",
+        "css",
+        "dom",
+        "html",
+        "javascript",
+        "node",
+        "react",
+        "typescript",
+        "웹",
+        "컴포넌트",
+    },
+    "프로그래밍": {
+        "array",
+        "class",
+        "code",
+        "function",
+        "java",
+        "javascript",
+        "python",
+        "variable",
+        "객체",
+        "배열",
+        "변수",
+        "클래스",
+        "함수",
+    },
+    "인공지능": {
+        "artificial intelligence",
+        "classification",
+        "deep learning",
+        "inference",
+        "machine learning",
+        "model",
+        "neural network",
+        "training",
+        "딥러닝",
+        "모델",
+        "분류",
+        "인공지능",
+        "추론",
+        "학습",
+    },
+    "머신러닝": {
+        "accuracy",
+        "classifier",
+        "dataset",
+        "feature",
+        "label",
+        "loss",
+        "machine learning",
+        "train",
+        "validation",
+        "검증",
+        "데이터셋",
+        "분류기",
+        "손실",
+        "정확도",
+        "특징",
+    },
+    "통계": {
+        "correlation",
+        "distribution",
+        "hypothesis",
+        "mean",
+        "regression",
+        "sample",
+        "standard deviation",
+        "variance",
+        "가설",
+        "분산",
+        "상관",
+        "표본",
+        "표준편차",
+        "회귀",
+    },
+    "확률": {
+        "bayes",
+        "conditional probability",
+        "distribution",
+        "event",
+        "expectation",
+        "probability",
+        "random variable",
+        "기댓값",
+        "분포",
+        "사건",
+        "조건부",
+        "확률",
+    },
+    "경영": {
+        "kpi",
+        "leadership",
+        "management",
+        "organization",
+        "strategy",
+        "swot",
+        "경영",
+        "리더십",
+        "전략",
+        "조직",
+    },
+    "마케팅": {
+        "brand",
+        "campaign",
+        "customer",
+        "marketing",
+        "positioning",
+        "segmentation",
+        "targeting",
+        "고객",
+        "마케팅",
+        "브랜드",
+        "세분화",
+    },
+    "재무관리": {
+        "cash flow",
+        "finance",
+        "irr",
+        "npv",
+        "portfolio",
+        "return",
+        "risk",
+        "현금흐름",
+        "위험",
+        "재무",
+        "포트폴리오",
+    },
+    "회계": {
+        "accounting",
+        "asset",
+        "balance sheet",
+        "debit",
+        "expense",
+        "income statement",
+        "liability",
+        "revenue",
+        "비용",
+        "부채",
+        "수익",
+        "자산",
+        "회계",
+    },
+    "물리": {
+        "acceleration",
+        "energy",
+        "force",
+        "momentum",
+        "physics",
+        "quantum",
+        "velocity",
+        "wave",
+        "가속도",
+        "물리",
+        "에너지",
+        "운동량",
+        "힘",
+    },
+    "화학": {
+        "acid",
+        "atom",
+        "base",
+        "bond",
+        "chemistry",
+        "concentration",
+        "molecule",
+        "reaction",
+        "농도",
+        "분자",
+        "원자",
+        "화학",
+    },
+    "생명과학": {
+        "biology",
+        "cell",
+        "chromosome",
+        "dna",
+        "enzyme",
+        "gene",
+        "protein",
+        "rna",
+        "단백질",
+        "생명",
+        "세포",
+        "유전자",
+    },
+    "전자회로": {
+        "capacitor",
+        "circuit",
+        "current",
+        "diode",
+        "op amp",
+        "resistance",
+        "signal",
+        "transistor",
+        "voltage",
+        "신호",
+        "전류",
+        "전압",
+        "전자회로",
+        "저항",
+    },
+    "디지털논리": {
+        "boolean",
+        "decoder",
+        "digital logic",
+        "encoder",
+        "flip flop",
+        "gate",
+        "karnaugh",
+        "truth table",
+        "논리",
+        "디지털논리",
+        "진리표",
+        "카르노",
+        "플립플롭",
+    },
+}
+
 ACADEMIC_TEXT_HINTS = {
     "algorithm",
     "architecture",
@@ -781,16 +1147,22 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
         return DEFAULT_TEXT_SCORE, "OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다."
 
     expanded_subject = expand_subject(cleaned_subject)
+    keyword_score, keyword_reason = score_subject_keyword_match(cleaned_subject, cleaned_text)
     similarity = calculate_text_similarity(expanded_subject, cleaned_text)
     if similarity is None:
-        return keyword_fallback_score(expanded_subject, cleaned_text)
+        return keyword_fallback_score(cleaned_subject, cleaned_text)
 
     semantic_score = score_similarity(similarity)
     evidence_score, evidence_reason = score_academic_text_evidence(cleaned_subject, cleaned_text)
-    score = max(semantic_score, evidence_score)
+    cap = subject_text_score_cap(cleaned_subject, keyword_score)
+    score = min(max(semantic_score, evidence_score, keyword_score), cap)
     reason = f"text_similarity={similarity:.2f}"
+    if keyword_reason:
+        reason = f"{reason}, {keyword_reason}"
     if evidence_reason:
         reason = f"{reason}, {evidence_reason}"
+    if score < max(semantic_score, evidence_score, keyword_score):
+        reason = f"{reason}, subject_cap={cap}"
 
     return score, reason
 
@@ -827,17 +1199,20 @@ def get_embedding_model():
 
 
 def keyword_fallback_score(subject: str, extracted_text: str) -> tuple[int, str]:
-    subject_tokens = tokenize_text(subject)
+    keyword_score, keyword_reason = score_subject_keyword_match(subject, extracted_text)
+    subject_tokens = tokenize_text(expand_subject(subject))
     text_tokens = tokenize_text(extracted_text)
     evidence_score, evidence_reason = score_academic_text_evidence(subject, extracted_text)
     if not subject_tokens or not text_tokens:
-        return evidence_score, "임베딩 모델을 사용할 수 없어 OCR 근거 기준으로 보정했습니다."
+        return max(keyword_score, evidence_score), "임베딩 모델을 사용할 수 없어 OCR 근거 기준으로 보정했습니다."
 
     overlap = len(subject_tokens & text_tokens)
     ratio = overlap / max(1, len(subject_tokens))
     score = DEFAULT_TEXT_SCORE + round(min(1.0, ratio) * 18)
-    score = max(score, evidence_score)
+    score = min(max(score, evidence_score, keyword_score), subject_text_score_cap(subject, keyword_score))
     reason = "임베딩 모델을 사용할 수 없어 키워드 겹침 기준으로 보정했습니다."
+    if keyword_reason:
+        reason = f"{reason}, {keyword_reason}"
     if evidence_reason:
         reason = f"{reason}, {evidence_reason}"
     return score, reason
@@ -849,11 +1224,15 @@ def tokenize_text(value: str) -> set[str]:
 
 
 def expand_subject(subject: str) -> str:
+    alias = SUBJECT_ALIASES.get(subject.replace(" ", ""), "") or SUBJECT_ALIASES.get(subject, "")
+    if alias:
+        return f"{subject} {alias}".strip()
+
     generic_context = (
         "lecture textbook notes workbook problem solving equation diagram concept "
         "definition theorem summary educational material study"
     )
-    return f"{subject} {SUBJECT_ALIASES.get(subject.replace(' ', ''), '')} {SUBJECT_ALIASES.get(subject, '')} {generic_context}".strip()
+    return f"{subject} {generic_context}".strip()
 
 
 def chunk_text(value: str, chunk_size: int = 320) -> list[str]:
@@ -867,19 +1246,83 @@ def chunk_text(value: str, chunk_size: int = 320) -> list[str]:
     return chunks
 
 
+def score_subject_keyword_match(subject: str, extracted_text: str) -> tuple[int, str]:
+    normalized_subject = subject.replace(" ", "").lower()
+    normalized_text = normalize_text_for_match(extracted_text)
+    if normalized_subject and normalized_subject.lower() in normalized_text:
+        return TEXT_SCORE_MAX, "subject_direct_match"
+
+    core_keywords = subject_core_keywords(subject)
+    if not core_keywords:
+        return 0, ""
+
+    matches = matched_keywords(core_keywords, extracted_text)
+    match_count = len(matches)
+    if match_count >= 3:
+        return 36, f"subject_keyword_matches={match_count}"
+    if match_count == 2:
+        return 32, f"subject_keyword_matches={match_count}"
+    if match_count == 1:
+        return 24, f"subject_keyword_matches=1:{next(iter(matches))}"
+
+    return 0, ""
+
+
+def subject_core_keywords(subject: str) -> set[str]:
+    compact_subject = subject.replace(" ", "")
+    return (
+        SUBJECT_CORE_KEYWORDS.get(compact_subject)
+        or SUBJECT_CORE_KEYWORDS.get(subject)
+        or set()
+    )
+
+
+def matched_keywords(keywords: set[str], extracted_text: str) -> set[str]:
+    tokens = tokenize_text(extracted_text)
+    compact_text = normalize_text_for_match(extracted_text)
+    matches = set()
+    for keyword in keywords:
+        normalized_keyword = keyword.lower().strip()
+        if not normalized_keyword:
+            continue
+        if " " in normalized_keyword:
+            if normalized_keyword.replace(" ", "") in compact_text:
+                matches.add(keyword)
+            continue
+        if normalized_keyword in tokens or normalized_keyword.replace(" ", "") in compact_text:
+            matches.add(keyword)
+    return matches
+
+
+def normalize_text_for_match(value: str) -> str:
+    return "".join(char.lower() for char in value if char.isalnum())
+
+
+def subject_text_score_cap(subject: str, keyword_score: int) -> int:
+    if not subject_core_keywords(subject):
+        return TEXT_SCORE_MAX
+    if keyword_score >= 36:
+        return TEXT_SCORE_MAX
+    if keyword_score >= 32:
+        return 36
+    if keyword_score >= 24:
+        return 30
+    return 20
+
+
 def score_academic_text_evidence(subject: str, extracted_text: str) -> tuple[int, str]:
     tokens = tokenize_text(extracted_text)
     formula_score, formula_reason = score_formula_evidence(subject, extracted_text)
 
     hint_matches = tokens & ACADEMIC_TEXT_HINTS
     if len(hint_matches) >= 4:
-        return max(36, formula_score), f"academic_text_hints={len(hint_matches)}"
+        return max(18, formula_score), f"academic_text_hints={len(hint_matches)}"
     if len(hint_matches) >= 2:
-        return max(28, formula_score), f"academic_text_hints={len(hint_matches)}"
+        return max(12, formula_score), f"academic_text_hints={len(hint_matches)}"
     if formula_score:
         return formula_score, formula_reason
     if len(tokens) >= 20:
-        return 22, "OCR 학습 텍스트량이 충분합니다."
+        return 10, "OCR 학습 텍스트량이 충분합니다."
 
     return 0, ""
 
@@ -904,12 +1347,19 @@ def score_formula_evidence(subject: str, extracted_text: str) -> tuple[int, str]
         "행렬",
     }
 
+    formula_cap = TEXT_SCORE_MAX if is_formula_heavy_subject(subject) else 16
+
     if formula_markers >= 6 or len(math_words) >= 2:
-        return 40, f"math_formula_evidence={formula_markers}"
+        return min(40, formula_cap), f"math_formula_evidence={formula_markers}"
     if formula_markers >= 3 or len(math_words) >= 1:
-        return 32, f"math_formula_evidence={formula_markers}"
+        return min(32, formula_cap), f"math_formula_evidence={formula_markers}"
 
     return 0, ""
+
+
+def is_formula_heavy_subject(subject: str) -> bool:
+    compact_subject = subject.replace(" ", "")
+    return compact_subject in {"선형대수", "수학", "통계", "확률", "물리", "전자회로", "디지털논리"}
 
 
 def has_strong_study_evidence(text_score: int) -> bool:

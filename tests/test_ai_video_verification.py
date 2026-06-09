@@ -13,6 +13,7 @@ from core.ai_video_verification import (
     has_ocr_timeout,
     prepare_ocr_image,
     select_best_verification_frame,
+    score_subject_similarity,
     verify_study_video,
 )
 from core.study_image_classifier import StudyClassifierResult
@@ -172,6 +173,37 @@ class AiVideoVerificationTest(unittest.TestCase):
             has_ocr_timeout("OCR 텍스트가 없어 과목 관련성 점수를 부여하지 않았습니다. (OCRTimeout: OCR 처리 시간이 40초를 초과했습니다.)")
         )
         self.assertFalse(has_ocr_timeout("OCR 텍스트가 없습니다."))
+
+    def test_subject_text_score_rewards_direct_subject_match(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.35):
+            score, reason = score_subject_similarity(
+                "데이터베이스",
+                "데이터베이스 설계와 DBMS 트랜잭션 정규화 릴레이션을 공부했습니다.",
+            )
+
+        self.assertEqual(score, 40)
+        self.assertIn("subject_direct_match", reason)
+
+    def test_subject_text_score_limits_related_but_wrong_subject(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.72):
+            score, reason = score_subject_similarity(
+                "데이터베이스",
+                "CPU 캐시 메모리 계층 레지스터 파이프라인 명령어 실행 과정을 정리했습니다.",
+            )
+
+        self.assertLessEqual(score, 20)
+        self.assertIn("subject_cap=20", reason)
+
+    def test_subject_text_score_gives_middle_score_for_one_core_keyword(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.25):
+            score, reason = score_subject_similarity(
+                "컴퓨터구조",
+                "오늘은 CPU 동작 흐름을 간단히 복습했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 24)
+        self.assertLessEqual(score, 30)
+        self.assertIn("subject_keyword_matches=1", reason)
 
     def test_video_verification_approves_from_65_points(self):
         with tempfile.TemporaryDirectory() as temp_dir:
