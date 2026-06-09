@@ -23,6 +23,7 @@ SCENE_SCORE_MAX = 60
 TEXT_SCORE_MAX = 40
 DEFAULT_TEXT_SCORE = 0
 STRONG_TEXT_SCORE = 36
+EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 STUDY_PROMPTS = (
     "a person studying with books and notes",
@@ -1190,8 +1191,9 @@ def get_embedding_model():
     if _embedding_model is None:
         from sentence_transformers import SentenceTransformer
 
+        model_name = os.getenv("EMBEDDING_MODEL_NAME", EMBEDDING_MODEL_NAME)
         _embedding_model = SentenceTransformer(
-            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_name,
             local_files_only=True,
         )
 
