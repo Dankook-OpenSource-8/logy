@@ -3,6 +3,8 @@ nixPkgs = ["...", "ffmpeg"]
 
 [variables]
 HF_HOME = "/app/.cache/huggingface"
+CLIP_LOCAL_FILES_ONLY = "true"
+STUDY_CLASSIFIER_LOCAL_FILES_ONLY = "true"
 
 [phases.build]
 cmds = ["python scripts/preload_embedding_model.py"]
