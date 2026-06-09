@@ -294,6 +294,7 @@ class RewardSettlementResponse(BaseModel):
 class VideoUploadResponse(BaseModel):
     message: str
     video_url: str
+    auth_expires_at: datetime | None = None
 
 
 class VideoVerificationRequest(BaseModel):
@@ -323,6 +324,7 @@ class VideoVerificationResultResponse(BaseModel):
     representative_frame_path: str | None
     created_at: datetime
     verified_at: datetime | None
+    auth_expires_at: datetime | None = None
 
 
 class PushTokenRegisterRequest(BaseModel):
