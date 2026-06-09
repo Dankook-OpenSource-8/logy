@@ -193,6 +193,48 @@ def _should_allow_auth_retake(result) -> bool:
     return any(marker in result.reason for marker in RETAKE_REASON_MARKERS)
 
 
+def _auth_log_allows_retake(auth_log: AuthLog) -> bool:
+    reason = auth_log.verification_reason or auth_log.error_message or ""
+    return auth_log.status == "실패" and any(marker in reason for marker in RETAKE_REASON_MARKERS)
+
+
+def _session_has_recent_retake_request(db: Session, study_session_id: int, user_id) -> bool:
+    recent_logs = (
+        db.query(AuthLog)
+        .filter(
+            AuthLog.study_session_id == study_session_id,
+            AuthLog.user_id == user_id,
+        )
+        .order_by(AuthLog.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    for auth_log in recent_logs:
+        if auth_log.status == "성공":
+            return False
+        if _auth_log_allows_retake(auth_log):
+            return True
+    return False
+
+
+def _reopen_expired_retake_window(
+    db: Session,
+    study_session: StudySession,
+    user_id,
+    now: datetime,
+) -> bool:
+    if not is_auth_expired(now, study_session.next_auth_time):
+        return False
+    if not _session_has_recent_retake_request(db, study_session.id, user_id):
+        return False
+
+    study_session.status = SessionStatus.active
+    study_session.end_time = None
+    study_session.next_auth_time = now
+    db.flush()
+    return True
+
+
 def _generate_invite_code(db: Session) -> str:
     for _ in range(10):
         invite_code = secrets.token_hex(4).upper()
@@ -1698,26 +1740,29 @@ def request_video_verification(
             detail="아직 인증 요청 시간이 아닙니다",
         )
     if is_auth_expired(now, study_session.next_auth_time):
-        study_session.status = SessionStatus.failed
-        study_session.end_time = now
-        auth_log = AuthLog(
-            user_id=current_user.id,
-            study_session_id=study_session.id,
-            video_url=video_url,
-            status="시간초과",
-            error_message="인증 제한 시간 60초를 초과했습니다.",
-            verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
-            verified_at=now,
-        )
-        db.add(auth_log)
-        db.commit()
-        db.refresh(auth_log)
-        return VideoVerificationResponse(
-            message="인증 제한 시간이 초과되어 실패 처리되었습니다.",
-            auth_log_id=auth_log.id,
-            status=auth_log.status,
-            auth_expires_at=expires_at,
-        )
+        if _reopen_expired_retake_window(db, study_session, current_user.id, now):
+            expires_at = auth_expires_at(study_session.next_auth_time)
+        else:
+            study_session.status = SessionStatus.failed
+            study_session.end_time = now
+            auth_log = AuthLog(
+                user_id=current_user.id,
+                study_session_id=study_session.id,
+                video_url=video_url,
+                status="시간초과",
+                error_message="인증 제한 시간 60초를 초과했습니다.",
+                verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
+                verified_at=now,
+            )
+            db.add(auth_log)
+            db.commit()
+            db.refresh(auth_log)
+            return VideoVerificationResponse(
+                message="인증 제한 시간이 초과되어 실패 처리되었습니다.",
+                auth_log_id=auth_log.id,
+                status=auth_log.status,
+                auth_expires_at=expires_at,
+            )
 
     auth_log = AuthLog(
         user_id=current_user.id,
@@ -1801,13 +1846,17 @@ async def upload_auth_video(
             detail="아직 인증 요청 시간이 아닙니다",
         )
     if is_auth_expired(now, study_session.next_auth_time):
-        study_session.status = SessionStatus.failed
-        study_session.end_time = now
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            detail="인증 제한 시간 60초를 초과했습니다",
-        )
+        if _reopen_expired_retake_window(db, study_session, current_user.id, now):
+            db.commit()
+            db.refresh(study_session)
+        else:
+            study_session.status = SessionStatus.failed
+            study_session.end_time = now
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="인증 제한 시간 60초를 초과했습니다",
+            )
 
     content_type = video.content_type or "video/mp4"
     if not content_type.startswith("video/"):

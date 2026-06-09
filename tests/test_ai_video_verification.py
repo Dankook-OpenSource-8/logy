@@ -19,7 +19,11 @@ from core.ai_video_verification import (
     score_subject_similarity,
     verify_study_video,
 )
-from api.routes import _should_allow_auth_retake, _verification_result_response
+from api.routes import (
+    _auth_log_allows_retake,
+    _should_allow_auth_retake,
+    _verification_result_response,
+)
 from core.study_image_classifier import StudyClassifierResult
 
 
@@ -308,6 +312,24 @@ class AiVideoVerificationTest(unittest.TestCase):
         )
 
         self.assertTrue(_should_allow_auth_retake(result))
+
+    def test_retake_auth_log_can_reopen_expired_upload_window(self):
+        auth_log = SimpleNamespace(
+            status="실패",
+            verification_reason="학습 여부가 애매하여 재촬영이 필요합니다.",
+            error_message=None,
+        )
+
+        self.assertTrue(_auth_log_allows_retake(auth_log))
+
+    def test_timeout_auth_log_cannot_reopen_expired_upload_window(self):
+        auth_log = SimpleNamespace(
+            status="시간초과",
+            verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
+            error_message=None,
+        )
+
+        self.assertFalse(_auth_log_allows_retake(auth_log))
 
     def test_low_score_failure_does_not_allow_retake_window(self):
         result = VerificationResult(
