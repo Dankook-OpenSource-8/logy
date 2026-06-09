@@ -9,6 +9,7 @@ from core.ai_video_verification import (
     FRAME_TIMESTAMPS,
     OCR_MAX_DIMENSION,
     FrameVerificationResult,
+    VerificationResult,
     extract_text,
     has_ocr_timeout,
     prepare_ocr_image,
@@ -16,6 +17,7 @@ from core.ai_video_verification import (
     score_subject_similarity,
     verify_study_video,
 )
+from api.routes import _should_allow_auth_retake
 from core.study_image_classifier import StudyClassifierResult
 
 
@@ -259,6 +261,36 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertFalse(result.approved)
         self.assertEqual(result.status, "실패")
         self.assertIn("재인증", result.reason)
+
+    def test_retake_result_keeps_auth_window_open(self):
+        result = VerificationResult(
+            approved=False,
+            status="실패",
+            total_score=58,
+            reason="학습 여부가 애매하여 재촬영이 필요합니다.",
+            scene_score=35,
+            text_score=13,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+        )
+
+        self.assertTrue(_should_allow_auth_retake(result))
+
+    def test_low_score_failure_does_not_allow_retake_window(self):
+        result = VerificationResult(
+            approved=False,
+            status="실패",
+            total_score=30,
+            reason="학습 장면 또는 과목 관련성이 부족합니다.",
+            scene_score=20,
+            text_score=0,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+        )
+
+        self.assertFalse(_should_allow_auth_retake(result))
 
 
 if __name__ == "__main__":

@@ -102,6 +102,7 @@ router = APIRouter()
 
 ONLINE_STATUSES = {"online", "offline"}
 STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "completed"}
+RETAKE_REASON_MARKERS = ("재촬영", "재인증")
 GROUP_VISIBILITIES = {"public", "private"}
 REST_DAILY_MAX_COUNT = 2
 REST_DAILY_MAX_SECONDS = 15 * 60
@@ -245,6 +246,12 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         created_at=auth_log.created_at,
         verified_at=auth_log.verified_at,
     )
+
+
+def _should_allow_auth_retake(result) -> bool:
+    if result.approved or result.status != "실패":
+        return False
+    return any(marker in result.reason for marker in RETAKE_REASON_MARKERS)
 
 
 def _generate_invite_code(db: Session) -> str:
@@ -787,6 +794,10 @@ def _run_video_verification(auth_log_id: int) -> None:
             auth_delay_minutes = weighted_auth_delay_minutes()
             study_session.period_minutes = auth_delay_minutes
             study_session.next_auth_time = verified_at + timedelta(minutes=auth_delay_minutes)
+        elif _should_allow_auth_retake(result):
+            study_session.status = SessionStatus.active
+            study_session.end_time = None
+            study_session.next_auth_time = verified_at
         else:
             study_session.status = SessionStatus.failed
             study_session.end_time = verified_at
