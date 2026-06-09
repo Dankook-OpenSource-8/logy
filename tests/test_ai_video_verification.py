@@ -24,8 +24,8 @@ from core.study_image_classifier import StudyClassifierResult
 
 
 class AiVideoVerificationTest(unittest.TestCase):
-    def test_video_verification_uses_two_representative_frames(self):
-        self.assertEqual(FRAME_TIMESTAMPS, (1.5, 3.5))
+    def test_video_verification_uses_single_midpoint_frame(self):
+        self.assertEqual(FRAME_TIMESTAMPS, (2.0,))
 
     def test_prepare_ocr_image_resizes_large_frame(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -144,10 +144,10 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(result.forbidden_penalty, 30)
         self.assertEqual(result.total_score, 72)
 
-    def test_second_frame_is_skipped_when_first_frame_passes(self):
+    def test_first_passing_frame_stops_scoring(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            first_frame = Path(temp_dir) / "frame_1_5.jpg"
-            second_frame = Path(temp_dir) / "frame_3_5.jpg"
+            first_frame = Path(temp_dir) / "frame_2_0.jpg"
+            second_frame = Path(temp_dir) / "frame_extra.jpg"
             first_frame.write_bytes(b"fake-1")
             second_frame.write_bytes(b"fake-2")
 
