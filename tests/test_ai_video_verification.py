@@ -317,6 +317,7 @@ class AiVideoVerificationTest(unittest.TestCase):
     def test_retake_auth_log_can_reopen_expired_upload_window(self):
         auth_log = SimpleNamespace(
             status="실패",
+            verification_score=58,
             verification_reason="학습 여부가 애매하여 재촬영이 필요합니다.",
             error_message=None,
         )
@@ -326,6 +327,7 @@ class AiVideoVerificationTest(unittest.TestCase):
     def test_timeout_auth_log_cannot_reopen_expired_upload_window(self):
         auth_log = SimpleNamespace(
             status="시간초과",
+            verification_score=None,
             verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
             error_message=None,
         )
@@ -349,6 +351,7 @@ class AiVideoVerificationTest(unittest.TestCase):
         )
         auth_log = SimpleNamespace(
             status="실패",
+            verification_score=58,
             verification_reason="학습 여부가 애매하여 재인증이 필요합니다.",
             error_message=None,
             session=study_session,
@@ -376,6 +379,62 @@ class AiVideoVerificationTest(unittest.TestCase):
         )
 
         self.assertFalse(_should_allow_auth_retake(result))
+
+    def test_low_score_retake_reason_does_not_allow_retake_window(self):
+        result = VerificationResult(
+            approved=False,
+            status="실패",
+            total_score=30,
+            reason="OCR 처리 시간이 초과되어 재촬영이 필요합니다.",
+            scene_score=20,
+            text_score=0,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+        )
+
+        self.assertFalse(_should_allow_auth_retake(result))
+
+    def test_low_score_auth_log_cannot_reopen_retake_window(self):
+        auth_log = SimpleNamespace(
+            status="실패",
+            verification_score=30,
+            verification_reason="OCR 처리 시간이 초과되어 재촬영이 필요합니다.",
+            error_message=None,
+        )
+
+        self.assertFalse(_auth_log_allows_retake(auth_log))
+
+    def test_low_score_expired_result_poll_does_not_refresh_retake_window(self):
+        class FakeDb:
+            def __init__(self):
+                self.flushed = False
+
+            def flush(self):
+                self.flushed = True
+
+        old_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        now = old_auth_time + timedelta(seconds=90)
+        study_session = SimpleNamespace(
+            status=None,
+            end_time=now,
+            next_auth_time=old_auth_time,
+        )
+        auth_log = SimpleNamespace(
+            status="실패",
+            verification_score=30,
+            verification_reason="OCR 처리 시간이 초과되어 재촬영이 필요합니다.",
+            error_message=None,
+            session=study_session,
+        )
+        db = FakeDb()
+
+        refreshed = _refresh_auth_log_retake_window(db, auth_log, now)
+
+        self.assertFalse(refreshed)
+        self.assertFalse(db.flushed)
+        self.assertEqual(study_session.next_auth_time, old_auth_time)
+        self.assertEqual(study_session.end_time, now)
 
     def test_verification_result_response_includes_retake_expiration(self):
         next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
