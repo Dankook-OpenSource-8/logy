@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from core.ai_video_verification import verify_study_video
+from core.ai_video_verification import RETAKE_THRESHOLD, verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
 from core.random_auth_schedule import (
     auth_expires_at,
@@ -253,12 +253,27 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
 def _should_allow_auth_retake(result) -> bool:
     if result.approved or result.status != "실패":
         return False
+    if result.total_score < RETAKE_THRESHOLD:
+        return False
     return any(marker in result.reason for marker in RETAKE_REASON_MARKERS)
 
 
 def _auth_log_allows_retake(auth_log: AuthLog) -> bool:
     reason = auth_log.verification_reason or auth_log.error_message or ""
+    verification_score = getattr(auth_log, "verification_score", None)
+    if verification_score is None or verification_score < RETAKE_THRESHOLD:
+        return False
     return auth_log.status == "실패" and any(marker in reason for marker in RETAKE_REASON_MARKERS)
+
+
+def _nickname_exists(db: Session, nickname: str) -> bool:
+    normalized_nickname = nickname.lower()
+    return (
+        db.query(User.id)
+        .filter(func.lower(User.nickname) == normalized_nickname)
+        .first()
+        is not None
+    )
 
 
 def _session_has_recent_retake_request(db: Session, study_session_id: int, user_id) -> bool:
@@ -918,7 +933,7 @@ def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameChec
             detail="닉네임을 입력해주세요",
         )
 
-    exists = db.query(User.id).filter(User.nickname == cleaned_nickname).first() is not None
+    exists = _nickname_exists(db, cleaned_nickname)
     return NicknameCheckResponse(nickname=cleaned_nickname, available=not exists)
 
 
@@ -945,8 +960,7 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)) -> User:
             detail="비밀번호는 4자 이상 입력해주세요",
         )
 
-    duplicated_user = db.query(User.id).filter(User.nickname == nickname).first()
-    if duplicated_user is not None:
+    if _nickname_exists(db, nickname):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="중복된 닉네임입니다",
