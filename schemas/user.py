@@ -1,20 +1,31 @@
 from datetime import date, datetime, time
 from uuid import UUID
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+from core.timezone import to_kst
 
 
-class UserSignupRequest(BaseModel):
+class KSTBaseModel(BaseModel):
+    @field_serializer("*", when_used="json")
+    def serialize_kst_datetimes(self, value):
+        if isinstance(value, datetime):
+            converted = to_kst(value)
+            return converted.isoformat() if converted is not None else None
+        return value
+
+
+class UserSignupRequest(KSTBaseModel):
     real_name: str = Field(..., min_length=1, max_length=100)
     nickname: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=4, max_length=128)
 
 
-class UserLoginRequest(BaseModel):
+class UserLoginRequest(KSTBaseModel):
     nickname: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=1, max_length=128)
 
 
-class UserResponse(BaseModel):
+class UserResponse(KSTBaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -26,24 +37,24 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
 
-class AuthResponse(BaseModel):
+class AuthResponse(KSTBaseModel):
     message: str
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
 
 
-class NicknameCheckResponse(BaseModel):
+class NicknameCheckResponse(KSTBaseModel):
     nickname: str
     available: bool
 
 
-class StudySessionStartRequest(BaseModel):
+class StudySessionStartRequest(KSTBaseModel):
     subject: str | None = Field(default=None, max_length=100)
     goal_note: str | None = Field(default=None, max_length=500)
 
 
-class StudySessionStartResponse(BaseModel):
+class StudySessionStartResponse(KSTBaseModel):
     message: str
     study_session_id: int
     start_time: datetime
@@ -51,7 +62,7 @@ class StudySessionStartResponse(BaseModel):
     auth_expires_at: datetime
 
 
-class StudySessionResponse(BaseModel):
+class StudySessionResponse(KSTBaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -68,11 +79,11 @@ class StudySessionResponse(BaseModel):
     last_paused_at: datetime | None
 
 
-class ActiveStudySessionResponse(BaseModel):
+class ActiveStudySessionResponse(KSTBaseModel):
     active_session: StudySessionResponse | None
 
 
-class StudySessionRestStatusResponse(BaseModel):
+class StudySessionRestStatusResponse(KSTBaseModel):
     study_session_id: int
     is_paused: bool
     daily_rest_count: int
@@ -94,23 +105,23 @@ class StudySessionRestEndResponse(StudySessionRestStatusResponse):
     rest_seconds: int
 
 
-class StudySessionCompleteRequest(BaseModel):
+class StudySessionCompleteRequest(KSTBaseModel):
     total_seconds: int = Field(..., ge=0, le=86400)
 
 
-class StudySessionCompleteResponse(BaseModel):
+class StudySessionCompleteResponse(KSTBaseModel):
     message: str
     study_session: StudySessionResponse
 
 
-class FocusInterruptionCreateRequest(BaseModel):
+class FocusInterruptionCreateRequest(KSTBaseModel):
     event_type: str = Field(default="app_background", min_length=1, max_length=50)
     client_event_at: datetime | None = None
     grace_seconds: int = Field(default=3, ge=0, le=60)
     penalty_applied: bool = False
 
 
-class FocusInterruptionResponse(BaseModel):
+class FocusInterruptionResponse(KSTBaseModel):
     message: str
     focus_interruption_id: int
     study_session_id: int
@@ -119,7 +130,7 @@ class FocusInterruptionResponse(BaseModel):
     session_status: str
 
 
-class FocusRiskItem(BaseModel):
+class FocusRiskItem(KSTBaseModel):
     # 히트맵의 한 칸에 들어갈 요일/시간대별 분석 결과입니다.
     dayOfWeek: int
     hour: int
@@ -132,7 +143,7 @@ class FocusRiskItem(BaseModel):
     reason: str
 
 
-class CollapsePredictionResponse(BaseModel):
+class CollapsePredictionResponse(KSTBaseModel):
     # 경고 배너에서 바로 쓰는 집중 붕괴 예측 값입니다.
     riskStartMinute: int | None
     predictedCollapseMinute: int | None
@@ -141,7 +152,7 @@ class CollapsePredictionResponse(BaseModel):
     sampleSize: int
 
 
-class FocusAnalyticsSummaryResponse(BaseModel):
+class FocusAnalyticsSummaryResponse(KSTBaseModel):
     # 차트를 보지 않아도 핵심 패턴을 읽을 수 있는 요약 정보입니다.
     highestRiskDay: str | None
     highestRiskHour: int | None
@@ -149,23 +160,24 @@ class FocusAnalyticsSummaryResponse(BaseModel):
     recommendation: str
 
 
-class FocusAnalyticsMetadataResponse(BaseModel):
+class FocusAnalyticsMetadataResponse(KSTBaseModel):
     # 프론트에서 빈 상태, 신뢰도 문구, 디버깅에 활용할 보조 지표입니다.
     totalAttempts: int
     failedAttempts: int
     baselineFailureRate: float
     recentFailureRate: float
     isEnoughData: bool
+    timezone: str
 
 
-class FocusAnalyticsResponse(BaseModel):
+class FocusAnalyticsResponse(KSTBaseModel):
     riskMap: list[FocusRiskItem]
     collapsePrediction: CollapsePredictionResponse
     summary: FocusAnalyticsSummaryResponse
     metadata: FocusAnalyticsMetadataResponse
 
 
-class StudyArchiveAuthLogResponse(BaseModel):
+class StudyArchiveAuthLogResponse(KSTBaseModel):
     authLogId: int
     status: str
     videoUrl: str
@@ -176,7 +188,7 @@ class StudyArchiveAuthLogResponse(BaseModel):
     verifiedAt: datetime | None
 
 
-class StudyArchiveSessionResponse(BaseModel):
+class StudyArchiveSessionResponse(KSTBaseModel):
     studySessionId: int
     subject: str | None
     goalNote: str | None
@@ -191,7 +203,7 @@ class StudyArchiveSessionResponse(BaseModel):
     authLogs: list[StudyArchiveAuthLogResponse]
 
 
-class StudyArchiveDayResponse(BaseModel):
+class StudyArchiveDayResponse(KSTBaseModel):
     date: date
     totalSeconds: int
     sessionCount: int
@@ -204,7 +216,7 @@ class StudyArchiveDayResponse(BaseModel):
     sessions: list[StudyArchiveSessionResponse]
 
 
-class StudyArchivePeriodResponse(BaseModel):
+class StudyArchivePeriodResponse(KSTBaseModel):
     period: str
     startDate: date
     endDate: date
@@ -220,13 +232,13 @@ class StudyArchivePeriodResponse(BaseModel):
     days: list[StudyArchiveDayResponse]
 
 
-class PetStageResponse(BaseModel):
+class PetStageResponse(KSTBaseModel):
     level: int
     name: str
     requiredExp: int
 
 
-class UserPetResponse(BaseModel):
+class UserPetResponse(KSTBaseModel):
     petId: int
     name: str
     level: int
@@ -237,7 +249,7 @@ class UserPetResponse(BaseModel):
     stages: list[PetStageResponse]
 
 
-class FurniturePieceProgressResponse(BaseModel):
+class FurniturePieceProgressResponse(KSTBaseModel):
     furniturePieceId: int
     code: str
     name: str
@@ -245,7 +257,7 @@ class FurniturePieceProgressResponse(BaseModel):
     completedCount: int
 
 
-class FurnitureItemProgressResponse(BaseModel):
+class FurnitureItemProgressResponse(KSTBaseModel):
     furnitureItemId: int
     code: str
     name: str
@@ -255,14 +267,14 @@ class FurnitureItemProgressResponse(BaseModel):
     pieces: list[FurniturePieceProgressResponse]
 
 
-class FurniturePlacementRequest(BaseModel):
+class FurniturePlacementRequest(KSTBaseModel):
     furniture_item_id: int = Field(..., ge=1)
     placed: bool = True
     position_x: int = Field(default=0, ge=0, le=100)
     position_y: int = Field(default=0, ge=0, le=100)
 
 
-class FurniturePlacementResponse(BaseModel):
+class FurniturePlacementResponse(KSTBaseModel):
     placementId: int
     furnitureItemId: int
     furnitureCode: str
@@ -272,13 +284,13 @@ class FurniturePlacementResponse(BaseModel):
     positionY: int
 
 
-class RewardStateResponse(BaseModel):
+class RewardStateResponse(KSTBaseModel):
     pet: UserPetResponse
     furniture: list[FurnitureItemProgressResponse]
     placements: list[FurniturePlacementResponse]
 
 
-class RewardSettlementResponse(BaseModel):
+class RewardSettlementResponse(KSTBaseModel):
     message: str
     rewardLogId: int
     verifiedSeconds: int
@@ -291,26 +303,26 @@ class RewardSettlementResponse(BaseModel):
     furniture: list[FurnitureItemProgressResponse]
 
 
-class VideoUploadResponse(BaseModel):
+class VideoUploadResponse(KSTBaseModel):
     message: str
     video_url: str
     auth_expires_at: datetime | None = None
 
 
-class VideoVerificationRequest(BaseModel):
+class VideoVerificationRequest(KSTBaseModel):
     study_session_id: int = Field(..., ge=1)
     video_url: str = Field(..., min_length=1, max_length=2048)
     captured_at: datetime | None = None
 
 
-class VideoVerificationResponse(BaseModel):
+class VideoVerificationResponse(KSTBaseModel):
     message: str
     auth_log_id: int
     status: str
     auth_expires_at: datetime | None = None
 
 
-class VideoVerificationResultResponse(BaseModel):
+class VideoVerificationResultResponse(KSTBaseModel):
     auth_log_id: int
     study_session_id: int
     status: str
@@ -327,17 +339,17 @@ class VideoVerificationResultResponse(BaseModel):
     auth_expires_at: datetime | None = None
 
 
-class PushTokenRegisterRequest(BaseModel):
+class PushTokenRegisterRequest(KSTBaseModel):
     expo_push_token: str = Field(..., min_length=1, max_length=255)
     platform: str | None = Field(default=None, max_length=20)
 
 
-class PushTokenRegisterResponse(BaseModel):
+class PushTokenRegisterResponse(KSTBaseModel):
     message: str
     push_token_id: int
 
 
-class NotificationSettingsUpdateRequest(BaseModel):
+class NotificationSettingsUpdateRequest(KSTBaseModel):
     all_notifications_enabled: bool = Field(
         default=True,
         validation_alias=AliasChoices("all_notifications_enabled", "allNotificationsEnabled"),
@@ -388,7 +400,7 @@ class NotificationSettingsUpdateRequest(BaseModel):
         return value
 
 
-class NotificationSettingsResponse(BaseModel):
+class NotificationSettingsResponse(KSTBaseModel):
     message: str | None = None
     allNotificationsEnabled: bool
     randomAuthEnabled: bool
@@ -402,12 +414,12 @@ class NotificationSettingsResponse(BaseModel):
     updatedAt: datetime
 
 
-class GroupCreateRequest(BaseModel):
+class GroupCreateRequest(KSTBaseModel):
     name: str = Field(..., min_length=1, max_length=60)
     visibility: str = Field(default="private", pattern="^(public|private)$")
 
 
-class GroupResponse(BaseModel):
+class GroupResponse(KSTBaseModel):
     id: int
     name: str
     visibility: str
@@ -415,30 +427,31 @@ class GroupResponse(BaseModel):
     owner_user_id: UUID
     member_count: int
     group_total_study_seconds: int
+    group_today_study_seconds: int
     created_at: datetime
 
 
-class GroupInviteResponse(BaseModel):
+class GroupInviteResponse(KSTBaseModel):
     group_id: int
     invite_code: str
 
 
-class GroupJoinRequest(BaseModel):
+class GroupJoinRequest(KSTBaseModel):
     invite_code: str = Field(..., min_length=4, max_length=32)
 
 
-class GroupJoinResponse(BaseModel):
+class GroupJoinResponse(KSTBaseModel):
     message: str
     group: GroupResponse
 
 
-class GroupMemberStatusUpdateRequest(BaseModel):
+class GroupMemberStatusUpdateRequest(KSTBaseModel):
     online_status: str = Field(default="online", max_length=20)
     study_status: str = Field(default="idle", max_length=20)
     active_study_session_id: int | None = Field(default=None, ge=1)
 
 
-class GroupMemberResponse(BaseModel):
+class GroupMemberResponse(KSTBaseModel):
     user_id: UUID
     nickname: str
     role: str
@@ -449,19 +462,20 @@ class GroupMemberResponse(BaseModel):
     total_study_seconds: int
 
 
-class GroupMembersResponse(BaseModel):
+class GroupMembersResponse(KSTBaseModel):
     group_id: int
     group_name: str
     group_total_study_seconds: int
+    group_today_study_seconds: int
     members: list[GroupMemberResponse]
 
 
-class GroupPokeCreateRequest(BaseModel):
+class GroupPokeCreateRequest(KSTBaseModel):
     target_user_id: UUID
     message: str | None = Field(default=None, max_length=100)
 
 
-class GroupPokeResponse(BaseModel):
+class GroupPokeResponse(KSTBaseModel):
     message: str
     poke_id: int
     group_id: int

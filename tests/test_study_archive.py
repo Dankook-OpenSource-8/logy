@@ -59,7 +59,7 @@ class StudyArchiveTest(unittest.TestCase):
     def test_daily_archive_groups_sessions_by_date(self):
         sessions = [
             make_session(1, 18, 9, "completed", 60),
-            make_session(2, 18, 12, "failed", 10),
+            make_session(2, 18, 16, "failed", 10),
             make_session(3, 19, 9, "completed", 30),
         ]
 
@@ -67,7 +67,8 @@ class StudyArchiveTest(unittest.TestCase):
 
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["date"].isoformat(), "2026-05-19")
-        self.assertEqual(result[1]["sessionCount"], 2)
+        self.assertEqual(result[0]["sessionCount"], 2)
+        self.assertEqual(result[1]["sessionCount"], 1)
 
     def test_daily_archive_uses_korea_date_for_early_morning_records(self):
         utc_afternoon = datetime(2026, 6, 7, 16, 30, tzinfo=timezone.utc)

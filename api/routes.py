@@ -31,7 +31,7 @@ from core.study_archive import (
     build_weekly_archive,
 )
 from core.storage import upload_video
-from core.timezone import app_date, app_day_bounds, app_now_date
+from core.timezone import app_date, app_day_bounds, app_now_date, to_kst
 from db.database import SessionLocal, get_db
 from db.models import (
     AuthLog,
@@ -197,17 +197,17 @@ def _study_session_response(study_session: StudySession) -> StudySessionResponse
         id=study_session.id,
         subject=study_session.subject,
         goal_note=study_session.goal_note,
-        start_time=study_session.start_time,
-        end_time=study_session.end_time,
+        start_time=to_kst(study_session.start_time),
+        end_time=to_kst(study_session.end_time),
         total_seconds=study_session.total_seconds,
         status=study_session.status.value,
         period_minutes=study_session.period_minutes,
-        next_auth_time=study_session.next_auth_time,
-        auth_expires_at=auth_expires_at(study_session.next_auth_time)
+        next_auth_time=to_kst(study_session.next_auth_time),
+        auth_expires_at=to_kst(auth_expires_at(study_session.next_auth_time))
         if study_session.next_auth_time
         else None,
         is_paused=study_session.is_paused,
-        last_paused_at=study_session.last_paused_at,
+        last_paused_at=to_kst(study_session.last_paused_at),
     )
 
 
@@ -244,9 +244,9 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         quality_score=auth_log.quality_score,
         forbidden_penalty=auth_log.forbidden_penalty,
         representative_frame_path=auth_log.representative_frame_path,
-        created_at=auth_log.created_at,
-        verified_at=auth_log.verified_at,
-        auth_expires_at=auth_expires_at(next_auth_time) if next_auth_time else None,
+        created_at=to_kst(auth_log.created_at),
+        verified_at=to_kst(auth_log.verified_at),
+        auth_expires_at=to_kst(auth_expires_at(next_auth_time)) if next_auth_time else None,
     )
 
 
@@ -348,29 +348,59 @@ def _get_group_member_or_404(
     return member
 
 
+def _group_verified_study_seconds(
+    db: Session,
+    group_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> int:
+    query = (
+        db.query(func.coalesce(func.sum(RewardLedger.verified_seconds), 0))
+        .join(GroupMember, GroupMember.user_id == RewardLedger.user_id)
+        .filter(GroupMember.group_id == group_id)
+    )
+    if start_at is not None or end_at is not None:
+        query = query.join(AuthLog, AuthLog.id == RewardLedger.auth_log_id)
+        if start_at is not None:
+            query = query.filter(AuthLog.verified_at >= start_at)
+        if end_at is not None:
+            query = query.filter(AuthLog.verified_at < end_at)
+    return int(query.scalar() or 0)
+
+
 def _group_total_study_seconds(db: Session, group_id: int) -> int:
+    return _group_verified_study_seconds(db, group_id)
+
+
+def _group_today_study_seconds(db: Session, group_id: int, now: datetime | None = None) -> int:
+    day_start, day_end = app_day_bounds(app_date(now))
+    return _group_verified_study_seconds(db, group_id, day_start, day_end)
+
+
+def _user_verified_study_seconds(db: Session, user_id) -> int:
     total = (
-        db.query(func.coalesce(func.sum(StudySession.total_seconds), 0))
-        .join(GroupMember, GroupMember.user_id == StudySession.user_id)
-        .filter(
-            GroupMember.group_id == group_id,
-            StudySession.status == SessionStatus.completed,
-        )
+        db.query(func.coalesce(func.sum(RewardLedger.verified_seconds), 0))
+        .filter(RewardLedger.user_id == user_id)
         .scalar()
     )
     return int(total or 0)
 
 
 def _user_total_study_seconds(db: Session, user_id) -> int:
+    return _user_verified_study_seconds(db, user_id)
+
+
+def _verified_study_seconds_for_session(db: Session, study_session_id: int) -> int:
     total = (
-        db.query(func.coalesce(func.sum(StudySession.total_seconds), 0))
-        .filter(
-            StudySession.user_id == user_id,
-            StudySession.status == SessionStatus.completed,
-        )
+        db.query(func.coalesce(func.sum(RewardLedger.verified_seconds), 0))
+        .filter(RewardLedger.study_session_id == study_session_id)
         .scalar()
     )
     return int(total or 0)
+
+
+def _sync_user_total_study_time(db: Session, user: User) -> None:
+    user.total_study_time = _user_verified_study_seconds(db, user.id)
 
 
 def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
@@ -387,7 +417,8 @@ def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
         owner_user_id=group.owner_user_id,
         member_count=int(member_count or 0),
         group_total_study_seconds=_group_total_study_seconds(db, group.id),
-        created_at=group.created_at,
+        group_today_study_seconds=_group_today_study_seconds(db, group.id),
+        created_at=to_kst(group.created_at),
     )
 
 
@@ -458,7 +489,7 @@ def _rest_status_response(
         "remaining_rest_count": max(REST_DAILY_MAX_COUNT - rest_count, 0),
         "remaining_rest_seconds": max(REST_DAILY_MAX_SECONDS - used_seconds, 0),
         "active_rest_id": active_rest.id if active_rest else None,
-        "active_rest_started_at": active_rest.started_at if active_rest else None,
+        "active_rest_started_at": to_kst(active_rest.started_at) if active_rest else None,
         **extra,
     }
 
@@ -757,6 +788,7 @@ def _settle_success_reward(
 ) -> RewardLedger:
     existing_log = db.query(RewardLedger).filter(RewardLedger.auth_log_id == auth_log.id).first()
     if existing_log is not None:
+        _sync_user_total_study_time(db, user)
         return existing_log
     if auth_log.status != "성공":
         raise HTTPException(
@@ -804,6 +836,8 @@ def _settle_success_reward(
     )
     db.add(reward_log)
     db.flush()
+    study_session.total_seconds = _verified_study_seconds_for_session(db, study_session.id)
+    _sync_user_total_study_time(db, user)
     return reward_log
 
 
@@ -966,6 +1000,9 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)) -> AuthRespo
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="닉네임 또는 비밀번호가 올바르지 않습니다",
         )
+    _sync_user_total_study_time(db, user)
+    db.commit()
+    db.refresh(user)
 
     return AuthResponse(
         message="로그인 성공",
@@ -975,8 +1012,14 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)) -> AuthRespo
 
 
 @router.get("/users/me", response_model=UserResponse)
-def read_me(current_user: User = Depends(get_current_user)) -> User:
+def read_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
     # 토큰으로 인증된 현재 사용자 정보를 반환합니다.
+    _sync_user_total_study_time(db, current_user)
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 
@@ -1360,6 +1403,7 @@ def get_group_members(
         group_id=group.id,
         group_name=group.name,
         group_total_study_seconds=_group_total_study_seconds(db, group.id),
+        group_today_study_seconds=_group_today_study_seconds(db, group.id),
         members=[
             GroupMemberResponse(
                 user_id=user.id,
@@ -1368,7 +1412,7 @@ def get_group_members(
                 online_status=member.online_status,
                 study_status=member.study_status,
                 active_study_session_id=member.active_study_session_id,
-                last_seen_at=member.last_seen_at,
+                last_seen_at=to_kst(member.last_seen_at),
                 total_study_seconds=_user_total_study_seconds(db, user.id),
             )
             for member, user in members
@@ -1428,7 +1472,7 @@ def update_group_presence(
         online_status=member.online_status,
         study_status=member.study_status,
         active_study_session_id=member.active_study_session_id,
-        last_seen_at=member.last_seen_at,
+        last_seen_at=to_kst(member.last_seen_at),
         total_study_seconds=_user_total_study_seconds(db, current_user.id),
     )
 
@@ -1464,7 +1508,7 @@ def create_group_poke(
         group_id=group_id,
         sender_user_id=current_user.id,
         target_user_id=target_member.user_id,
-        created_at=poke.created_at,
+        created_at=to_kst(poke.created_at),
     )
 
 
@@ -1504,9 +1548,9 @@ def start_study_session(
     return StudySessionStartResponse(
         message="공부 세션 시작",
         study_session_id=study_session.id,
-        start_time=study_session.start_time,
-        next_auth_time=study_session.next_auth_time,
-        auth_expires_at=auth_expires_at(study_session.next_auth_time),
+        start_time=to_kst(study_session.start_time),
+        next_auth_time=to_kst(study_session.next_auth_time),
+        auth_expires_at=to_kst(auth_expires_at(study_session.next_auth_time)),
     )
 
 
@@ -1726,13 +1770,14 @@ def complete_study_session(
             detail="진행 중인 공부 세션만 완료할 수 있습니다",
         )
 
+    verified_total_seconds = _verified_study_seconds_for_session(db, study_session.id)
     study_session.status = SessionStatus.completed
     study_session.end_time = datetime.now(timezone.utc)
-    study_session.total_seconds = payload.total_seconds
+    study_session.total_seconds = verified_total_seconds
     study_session.is_paused = False
     study_session.last_paused_at = None
 
-    current_user.total_study_time = (current_user.total_study_time or 0) + payload.total_seconds
+    _sync_user_total_study_time(db, current_user)
 
     try:
         db.commit()
@@ -1811,7 +1856,7 @@ def create_focus_interruption(
         message="이탈 로그 기록",
         focus_interruption_id=focus_interruption.id,
         study_session_id=study_session.id,
-        interrupted_at=focus_interruption.interrupted_at,
+        interrupted_at=to_kst(focus_interruption.interrupted_at),
         penalty_applied=focus_interruption.penalty_applied,
         session_status=study_session.status.value,
     )
@@ -1905,7 +1950,7 @@ def request_video_verification(
                 message="인증 제한 시간이 초과되어 실패 처리되었습니다.",
                 auth_log_id=auth_log.id,
                 status=auth_log.status,
-                auth_expires_at=expires_at,
+                auth_expires_at=to_kst(expires_at),
             )
 
     auth_log = AuthLog(
@@ -1925,7 +1970,7 @@ def request_video_verification(
         message="영상 검증 요청 접수",
         auth_log_id=auth_log.id,
         status=auth_log.status,
-        auth_expires_at=expires_at,
+        auth_expires_at=to_kst(expires_at),
     )
 
 
@@ -2026,5 +2071,5 @@ async def upload_auth_video(
     return VideoUploadResponse(
         message="영상 업로드 완료",
         video_url=video_url,
-        auth_expires_at=auth_expires_at(study_session.next_auth_time),
+        auth_expires_at=to_kst(auth_expires_at(study_session.next_auth_time)),
     )
