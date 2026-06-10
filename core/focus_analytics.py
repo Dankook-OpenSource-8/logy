@@ -1,6 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from statistics import median
+from zoneinfo import ZoneInfo
+
+from core.timezone import KST_TIMEZONE_NAME
 
 
 RISK_LEVELS = (
@@ -9,6 +12,7 @@ RISK_LEVELS = (
     (80, "HIGH"),
     (100, "CRITICAL"),
 )
+DEFAULT_ANALYTICS_TIMEZONE = KST_TIMEZONE_NAME
 
 
 @dataclass(frozen=True)
@@ -106,10 +110,18 @@ def _day_name(day_of_week: int) -> str:
     return ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"][day_of_week]
 
 
+def _local_start_time(start_time: datetime, timezone_name: str) -> datetime:
+    source_time = start_time
+    if source_time.tzinfo is None:
+        source_time = source_time.replace(tzinfo=timezone.utc)
+    return source_time.astimezone(ZoneInfo(timezone_name))
+
+
 def build_focus_analytics(
     sessions: list[AnalyticsSession],
     recent_session_limit: int = 10,
     recent_failed_limit: int = 10,
+    timezone_name: str = DEFAULT_ANALYTICS_TIMEZONE,
 ) -> dict:
     # 진행 중인 세션은 결과가 아직 확정되지 않았으므로 분석 모수에서 제외합니다.
     completed_sessions = [
@@ -161,8 +173,9 @@ def build_focus_analytics(
     }
     slot_stats: dict[tuple[int, int], dict[str, int]] = {}
     for session in completed_sessions:
-        day_of_week = (session.start_time.weekday() + 1) % 7
-        hour = session.start_time.hour
+        local_start_time = _local_start_time(session.start_time, timezone_name)
+        day_of_week = (local_start_time.weekday() + 1) % 7
+        hour = local_start_time.hour
         day_stats[day_of_week]["total"] += 1
         if session.status == "failed":
             day_stats[day_of_week]["failed"] += 1
@@ -263,5 +276,6 @@ def build_focus_analytics(
             "baselineFailureRate": round(baseline_failure_rate, 1),
             "recentFailureRate": round(recent_failure_rate, 1),
             "isEnoughData": total_attempts >= 5 and failed_attempts >= 1,
+            "timezone": timezone_name,
         },
     }

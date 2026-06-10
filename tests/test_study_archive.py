@@ -67,13 +67,14 @@ class StudyArchiveTest(unittest.TestCase):
 
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["date"].isoformat(), "2026-05-19")
-        self.assertEqual(result[1]["sessionCount"], 2)
+        self.assertEqual(result[0]["sessionCount"], 2)
+        self.assertEqual(result[1]["sessionCount"], 1)
 
     def test_daily_archive_sums_study_seconds(self):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60),
-                make_session(2, 18, 21, "failed", 10),
+                make_session(2, 18, 10, "failed", 10),
             ]
         )
 
@@ -83,8 +84,8 @@ class StudyArchiveTest(unittest.TestCase):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60),
-                make_session(2, 18, 21, "failed", 10),
-                make_session(3, 18, 22, "cancelled", 5),
+                make_session(2, 18, 10, "failed", 10),
+                make_session(3, 18, 11, "cancelled", 5),
             ]
         )
 
@@ -95,7 +96,7 @@ class StudyArchiveTest(unittest.TestCase):
         result = build_daily_archive(
             [
                 make_session(1, 18, 9, "completed", 60, ["성공", "성공"]),
-                make_session(2, 18, 21, "failed", 10, ["실패", "시간초과", "대기"]),
+                make_session(2, 18, 10, "failed", 10, ["실패", "시간초과", "대기"]),
             ]
         )
 

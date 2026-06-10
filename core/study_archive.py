@@ -2,6 +2,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from core.timezone import kst_date, to_kst
+
 
 @dataclass(frozen=True)
 class ArchiveAuthLog:
@@ -52,8 +54,8 @@ def _session_payload(session: ArchiveSession) -> dict:
         "studySessionId": session.study_session_id,
         "subject": session.subject,
         "goalNote": session.goal_note,
-        "startTime": session.start_time,
-        "endTime": session.end_time,
+        "startTime": to_kst(session.start_time),
+        "endTime": to_kst(session.end_time),
         "totalSeconds": int(session.total_seconds or 0),
         "status": session.status,
         **counts,
@@ -65,8 +67,8 @@ def _session_payload(session: ArchiveSession) -> dict:
                 "thumbnailUrl": auth_log.thumbnail_url,
                 "verificationScore": auth_log.verification_score,
                 "verificationReason": auth_log.verification_reason,
-                "createdAt": auth_log.created_at,
-                "verifiedAt": auth_log.verified_at,
+                "createdAt": to_kst(auth_log.created_at),
+                "verifiedAt": to_kst(auth_log.verified_at),
             }
             for auth_log in sorted(auth_log_iter(session), key=lambda item: item.created_at)
         ],
@@ -80,7 +82,7 @@ def auth_log_iter(session: ArchiveSession) -> list[ArchiveAuthLog]:
 def build_daily_archive(sessions: list[ArchiveSession]) -> list[dict]:
     days: dict[date, list[ArchiveSession]] = defaultdict(list)
     for session in sessions:
-        days[session.start_time.date()].append(session)
+        days[kst_date(session.start_time)].append(session)
 
     daily_archive = []
     for archive_date in sorted(days.keys(), reverse=True):

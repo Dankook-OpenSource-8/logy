@@ -38,14 +38,14 @@ class FocusAnalyticsTest(unittest.TestCase):
         result = build_focus_analytics(sessions)
 
         self.assertEqual(len(result["riskMap"]), 2)
-        monday_22 = next(
+        tuesday_7 = next(
             item
             for item in result["riskMap"]
-            if item["dayOfWeek"] == 1 and item["hour"] == 22
+            if item["dayOfWeek"] == 2 and item["hour"] == 7
         )
-        self.assertEqual(monday_22["totalAttempts"], 2)
-        self.assertEqual(monday_22["failedAttempts"], 1)
-        self.assertEqual(monday_22["failureRate"], 50.0)
+        self.assertEqual(tuesday_7["totalAttempts"], 2)
+        self.assertEqual(tuesday_7["failedAttempts"], 1)
+        self.assertEqual(tuesday_7["failureRate"], 50.0)
 
     def test_collapse_prediction_uses_median_and_trims_outlier(self):
         sessions = [
@@ -67,7 +67,7 @@ class FocusAnalyticsTest(unittest.TestCase):
         recent_failed = [make_session(day, 23, "failed", 12) for day in range(10, 15)]
 
         result = build_focus_analytics(older_completed + recent_failed)
-        high_risk_slot = next(item for item in result["riskMap"] if item["hour"] == 23)
+        high_risk_slot = next(item for item in result["riskMap"] if item["hour"] == 8)
 
         self.assertIn(high_risk_slot["riskLevel"], {"HIGH", "CRITICAL"})
         self.assertGreater(result["metadata"]["recentFailureRate"], result["metadata"]["baselineFailureRate"])
@@ -83,8 +83,8 @@ class FocusAnalyticsTest(unittest.TestCase):
 
         result = build_focus_analytics(sessions)
 
-        self.assertEqual(result["summary"]["highestRiskDay"], "월요일")
-        self.assertEqual(result["summary"]["highestRiskHour"], 22)
+        self.assertEqual(result["summary"]["highestRiskDay"], "화요일")
+        self.assertEqual(result["summary"]["highestRiskHour"], 7)
         self.assertGreater(result["summary"]["riskMultiplier"], 1)
         self.assertTrue(result["summary"]["recommendation"])
 
@@ -180,7 +180,7 @@ class FocusAnalyticsTest(unittest.TestCase):
         ]
 
         result = build_focus_analytics(sessions)
-        risky_slot = next(item for item in result["riskMap"] if item["hour"] == 22)
+        risky_slot = next(item for item in result["riskMap"] if item["hour"] == 7)
 
         self.assertIn("개인 평균보다", risky_slot["reason"])
 
@@ -193,7 +193,7 @@ class FocusAnalyticsTest(unittest.TestCase):
         ]
 
         result = build_focus_analytics(sessions)
-        stable_slot = next(item for item in result["riskMap"] if item["hour"] == 9)
+        stable_slot = next(item for item in result["riskMap"] if item["hour"] == 18)
 
         self.assertIn("안정적인", stable_slot["reason"])
 
@@ -250,10 +250,11 @@ class FocusAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["riskMap"][0]["dayOfWeek"], 0)
         self.assertEqual(result["summary"]["highestRiskDay"], "일요일")
 
-    def test_hour_is_preserved_for_frontend_heatmap(self):
+    def test_hour_is_converted_to_kst_for_frontend_heatmap(self):
         result = build_focus_analytics([make_session(18, 0, "failed", 15)])
 
-        self.assertEqual(result["riskMap"][0]["hour"], 0)
+        self.assertEqual(result["riskMap"][0]["hour"], 9)
+        self.assertEqual(result["metadata"]["timezone"], "Asia/Seoul")
 
     def test_enough_data_requires_at_least_five_attempts_and_one_failure(self):
         four_sessions = [
@@ -297,7 +298,7 @@ class FocusAnalyticsTest(unittest.TestCase):
 
         self.assertEqual(
             [(item["dayOfWeek"], item["hour"]) for item in result["riskMap"]],
-            [(1, 7), (1, 9), (2, 22)],
+            [(1, 16), (1, 18), (3, 7)],
         )
 
     def test_output_values_are_rounded_for_api_response(self):
