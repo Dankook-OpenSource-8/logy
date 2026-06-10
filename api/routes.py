@@ -31,7 +31,7 @@ from core.study_archive import (
     build_weekly_archive,
 )
 from core.storage import upload_video
-from core.timezone import kst_date, kst_date_range_bounds_utc, kst_day_bounds_utc, to_kst
+from core.timezone import app_date, app_day_bounds, app_now_date, to_kst
 from db.database import SessionLocal, get_db
 from db.models import (
     AuthLog,
@@ -48,6 +48,7 @@ from db.models import (
     StudySessionRest,
     User,
     UserFurniturePieceProgress,
+    UserNotificationSetting,
     UserPet,
     UserPushToken,
 )
@@ -70,6 +71,8 @@ from schemas import (
     FocusAnalyticsResponse,
 
     NicknameCheckResponse,
+    NotificationSettingsResponse,
+    NotificationSettingsUpdateRequest,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
     FurniturePlacementRequest,
@@ -128,6 +131,65 @@ def _is_duplicate_nickname_error(error: IntegrityError) -> bool:
         return "nickname" in error_message or "users_nickname" in error_message
 
     return "unique" in error_message and "nickname" in error_message
+
+
+def _notification_weekdays_to_list(value: str | None) -> list[int]:
+    if not value:
+        return []
+
+    weekdays = []
+    for item in value.split(","):
+        item = item.strip()
+        if item.isdigit():
+            weekday = int(item)
+            if 0 <= weekday <= 6 and weekday not in weekdays:
+                weekdays.append(weekday)
+    return weekdays
+
+
+def _notification_weekdays_to_db(weekdays: list[int] | None) -> str:
+    normalized_weekdays = sorted(set(weekdays or []))
+    if any(weekday < 0 or weekday > 6 for weekday in normalized_weekdays):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="반복 요일은 0부터 6 사이의 숫자만 입력할 수 있습니다",
+        )
+    return ",".join(str(weekday) for weekday in normalized_weekdays)
+
+
+def _get_or_create_notification_setting(db: Session, user: User) -> UserNotificationSetting:
+    setting = (
+        db.query(UserNotificationSetting)
+        .filter(UserNotificationSetting.user_id == user.id)
+        .first()
+    )
+    if setting is not None:
+        return setting
+
+    setting = UserNotificationSetting(user_id=user.id)
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+def _notification_settings_response(
+    setting: UserNotificationSetting,
+    message: str | None = None,
+) -> NotificationSettingsResponse:
+    return NotificationSettingsResponse(
+        message=message,
+        allNotificationsEnabled=setting.all_notifications_enabled,
+        randomAuthEnabled=setting.random_auth_enabled,
+        groupEnabled=setting.group_enabled,
+        rewardEnabled=setting.reward_enabled,
+        quietHoursEnabled=setting.quiet_hours_enabled,
+        quietStartTime=setting.quiet_start_time,
+        quietEndTime=setting.quiet_end_time,
+        quietWeekdays=_notification_weekdays_to_list(setting.quiet_weekdays),
+        createdAt=setting.created_at,
+        updatedAt=setting.updated_at,
+    )
 
 
 def _study_session_response(study_session: StudySession) -> StudySessionResponse:
@@ -311,7 +373,7 @@ def _group_total_study_seconds(db: Session, group_id: int) -> int:
 
 
 def _group_today_study_seconds(db: Session, group_id: int, now: datetime | None = None) -> int:
-    day_start, day_end = kst_day_bounds_utc(kst_date(now))
+    day_start, day_end = app_day_bounds(app_date(now))
     return _group_verified_study_seconds(db, group_id, day_start, day_end)
 
 
@@ -378,7 +440,7 @@ def _study_session_or_404(db: Session, study_session_id: int, user_id) -> StudyS
 
 
 def _today_rest_bounds(now: datetime) -> tuple[datetime, datetime]:
-    return kst_day_bounds_utc(kst_date(now))
+    return app_day_bounds(app_date(now))
 
 
 def _daily_rest_logs(db: Session, user_id, now: datetime) -> list[StudySessionRest]:
@@ -440,7 +502,7 @@ def _archive_date_bounds(
     start_date: date | None,
     end_date: date | None,
 ) -> tuple[date, date, datetime, datetime]:
-    range_end = end_date or kst_date()
+    range_end = end_date or app_now_date()
     range_start = start_date or (range_end - timedelta(days=29))
     if range_start > range_end:
         raise HTTPException(
@@ -448,7 +510,8 @@ def _archive_date_bounds(
             detail="start_date는 end_date보다 늦을 수 없습니다",
         )
 
-    start_at, end_at = kst_date_range_bounds_utc(range_start, range_end)
+    start_at, _ = app_day_bounds(range_start)
+    _, end_at = app_day_bounds(range_end)
     return range_start, range_end, start_at, end_at
 
 
@@ -735,10 +798,11 @@ def _settle_success_reward(
 
     verified_seconds = _verified_seconds_for_auth(db, auth_log, study_session)
     pet_exp = pet_exp_from_verified_seconds(verified_seconds)
+    reward_date = app_date(auth_log.verified_at) if auth_log.verified_at else app_now_date()
     attendance = attendance_reward(
         user.last_attendance_date,
         user.streak_days or 0,
-        kst_date(auth_log.verified_at),
+        reward_date,
     )
 
     pet = _get_or_create_user_pet(db, user)
@@ -747,7 +811,7 @@ def _settle_success_reward(
 
     if attendance.is_first_attendance_today:
         user.streak_days = attendance.streak_days
-        user.last_attendance_date = kst_date(auth_log.verified_at)
+        user.last_attendance_date = reward_date
 
     auth_minutes = verified_seconds // 60
     progress_percent = furniture_progress_from_auth_minutes(auth_minutes)
@@ -1010,6 +1074,62 @@ def register_push_token(
         message="푸시 토큰 저장",
         push_token_id=push_token.id,
     )
+
+
+@router.get("/users/notification-settings", response_model=NotificationSettingsResponse)
+def get_notification_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationSettingsResponse:
+    setting = _get_or_create_notification_setting(db, current_user)
+    return _notification_settings_response(setting)
+
+
+@router.put("/users/notification-settings", response_model=NotificationSettingsResponse)
+def update_notification_settings(
+    payload: NotificationSettingsUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationSettingsResponse:
+    setting = _get_or_create_notification_setting(db, current_user)
+    if payload.quiet_hours_enabled and (
+        payload.quiet_start_time is None or payload.quiet_end_time is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="방해 금지 시간을 사용할 경우 시작 시간과 종료 시간을 모두 입력해주세요",
+        )
+
+    setting.all_notifications_enabled = payload.all_notifications_enabled
+    setting.random_auth_enabled = payload.random_auth_enabled
+    setting.group_enabled = payload.group_enabled
+    setting.reward_enabled = payload.reward_enabled
+    setting.quiet_hours_enabled = payload.quiet_hours_enabled
+    if payload.quiet_hours_enabled:
+        if not payload.quiet_weekdays:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="방해 금지 시간을 사용할 경우 반복 요일을 1개 이상 선택해주세요",
+            )
+        setting.quiet_start_time = payload.quiet_start_time
+        setting.quiet_end_time = payload.quiet_end_time
+        setting.quiet_weekdays = _notification_weekdays_to_db(payload.quiet_weekdays)
+    else:
+        setting.quiet_start_time = None
+        setting.quiet_end_time = None
+        setting.quiet_weekdays = ""
+
+    try:
+        db.commit()
+        db.refresh(setting)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="알림 설정을 저장하지 못했습니다",
+        ) from None
+
+    return _notification_settings_response(setting, "알림 설정 저장")
 
 
 @router.get("/rewards/me", response_model=RewardStateResponse)

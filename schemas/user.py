@@ -1,6 +1,6 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from core.timezone import to_kst
 
@@ -347,6 +347,71 @@ class PushTokenRegisterRequest(KSTBaseModel):
 class PushTokenRegisterResponse(KSTBaseModel):
     message: str
     push_token_id: int
+
+
+class NotificationSettingsUpdateRequest(KSTBaseModel):
+    all_notifications_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("all_notifications_enabled", "allNotificationsEnabled"),
+    )
+    random_auth_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("random_auth_enabled", "randomAuthEnabled"),
+    )
+    group_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("group_enabled", "groupEnabled"),
+    )
+    reward_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("reward_enabled", "rewardEnabled"),
+    )
+    quiet_hours_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("quiet_hours_enabled", "quietHoursEnabled"),
+    )
+    quiet_start_time: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("quiet_start_time", "quietStartTime"),
+    )
+    quiet_end_time: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("quiet_end_time", "quietEndTime"),
+    )
+    quiet_weekdays: list[int] = Field(
+        default_factory=lambda: [0, 1, 2, 3, 4],
+        validation_alias=AliasChoices("quiet_weekdays", "quietWeekdays"),
+    )
+
+    @field_validator("quiet_start_time", "quiet_end_time", mode="before")
+    @classmethod
+    def empty_time_to_none(cls, value):
+        if value == "":
+            return None
+        return value
+
+    @field_validator("quiet_weekdays", mode="before")
+    @classmethod
+    def empty_weekdays_to_list(cls, value):
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [weekday for weekday in value if weekday != "" and weekday is not None]
+        return value
+
+
+class NotificationSettingsResponse(KSTBaseModel):
+    message: str | None = None
+    allNotificationsEnabled: bool
+    randomAuthEnabled: bool
+    groupEnabled: bool
+    rewardEnabled: bool
+    quietHoursEnabled: bool
+    quietStartTime: time | None
+    quietEndTime: time | None
+    quietWeekdays: list[int]
+    createdAt: datetime
+    updatedAt: datetime
 
 
 class GroupCreateRequest(KSTBaseModel):

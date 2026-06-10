@@ -2,7 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from core.timezone import kst_date, to_kst
+from core.timezone import app_date, to_kst
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ def auth_log_iter(session: ArchiveSession) -> list[ArchiveAuthLog]:
 def build_daily_archive(sessions: list[ArchiveSession]) -> list[dict]:
     days: dict[date, list[ArchiveSession]] = defaultdict(list)
     for session in sessions:
-        days[kst_date(session.start_time)].append(session)
+        days[app_date(session.start_time)].append(session)
 
     daily_archive = []
     for archive_date in sorted(days.keys(), reverse=True):

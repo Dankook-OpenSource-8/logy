@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean, UniqueConstraint, Date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Boolean, UniqueConstraint, Date, Time
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from db.database import Base
@@ -38,6 +38,7 @@ class User(Base):
     auth_logs = relationship("AuthLog", back_populates="owner", cascade="all, delete-orphan")
     focus_interruptions = relationship("FocusInterruption", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("UserPushToken", back_populates="owner", cascade="all, delete-orphan")
+    notification_setting = relationship("UserNotificationSetting", back_populates="owner", uselist=False, cascade="all, delete-orphan")
     rest_logs = relationship("StudySessionRest", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
     owned_groups = relationship("StudyGroup", back_populates="owner", cascade="all, delete-orphan")
@@ -135,6 +136,25 @@ class UserPushToken(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     owner = relationship("User", back_populates="push_tokens")
+
+
+class UserNotificationSetting(Base):
+    __tablename__ = "user_notification_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    all_notifications_enabled = Column(Boolean, default=True, nullable=False)
+    random_auth_enabled = Column(Boolean, default=True, nullable=False)
+    group_enabled = Column(Boolean, default=True, nullable=False)
+    reward_enabled = Column(Boolean, default=True, nullable=False)
+    quiet_hours_enabled = Column(Boolean, default=False, nullable=False)
+    quiet_start_time = Column(Time, nullable=True)
+    quiet_end_time = Column(Time, nullable=True)
+    quiet_weekdays = Column(String, default="0,1,2,3,4", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="notification_setting")
 
 
 # 6. 친구들과 함께 공부하는 그룹
