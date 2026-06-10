@@ -232,6 +232,11 @@ def _video_extension(content_type: str, filename: str | None) -> str:
 
 def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
     next_auth_time = auth_log.session.next_auth_time if auth_log.session else None
+    retake_expires_at = (
+        auth_expires_at(next_auth_time)
+        if next_auth_time and _auth_log_allows_retake(auth_log)
+        else None
+    )
     return VideoVerificationResultResponse(
         auth_log_id=auth_log.id,
         study_session_id=auth_log.study_session_id,
@@ -246,7 +251,7 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         representative_frame_path=auth_log.representative_frame_path,
         created_at=to_kst(auth_log.created_at),
         verified_at=to_kst(auth_log.verified_at),
-        auth_expires_at=to_kst(auth_expires_at(next_auth_time)) if next_auth_time else None,
+        auth_expires_at=to_kst(retake_expires_at),
     )
 
 
