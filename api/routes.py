@@ -233,6 +233,7 @@ def _video_extension(content_type: str, filename: str | None) -> str:
 def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
     next_auth_time = auth_log.session.next_auth_time if auth_log.session else None
     can_retake = _auth_log_allows_retake(auth_log)
+    failure_type = _verification_failure_type(auth_log)
     retake_expires_at = (
         auth_expires_at(next_auth_time)
         if next_auth_time and can_retake
@@ -241,7 +242,7 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
     return VideoVerificationResultResponse(
         auth_log_id=auth_log.id,
         study_session_id=auth_log.study_session_id,
-        status=auth_log.status,
+        status="실패" if failure_type == "final_failure" else auth_log.status,
         video_url=auth_log.video_url,
         verification_score=auth_log.verification_score,
         verification_reason=auth_log.verification_reason,
@@ -254,7 +255,9 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         verified_at=to_kst(auth_log.verified_at),
         auth_expires_at=to_kst(retake_expires_at),
         can_retake=can_retake,
-        failure_type=_verification_failure_type(auth_log),
+        failure_type=failure_type,
+        canRetake=can_retake,
+        failureType=failure_type,
     )
 
 
@@ -1983,6 +1986,8 @@ def request_video_verification(
                 auth_expires_at=None,
                 can_retake=False,
                 failure_type="final_failure",
+                canRetake=False,
+                failureType="final_failure",
             )
 
     auth_log = AuthLog(
@@ -2005,6 +2010,8 @@ def request_video_verification(
         auth_expires_at=to_kst(expires_at),
         can_retake=False,
         failure_type=None,
+        canRetake=False,
+        failureType=None,
     )
 
 

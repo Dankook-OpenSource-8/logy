@@ -322,6 +322,8 @@ class VideoVerificationResponse(KSTBaseModel):
     auth_expires_at: datetime | None = None
     can_retake: bool = False
     failure_type: str | None = None
+    canRetake: bool = False
+    failureType: str | None = None
 
 
 class VideoVerificationResultResponse(KSTBaseModel):
@@ -341,6 +343,8 @@ class VideoVerificationResultResponse(KSTBaseModel):
     auth_expires_at: datetime | None = None
     can_retake: bool = False
     failure_type: str | None = None
+    canRetake: bool = False
+    failureType: str | None = None
 
 
 class PushTokenRegisterRequest(KSTBaseModel):
