@@ -521,6 +521,8 @@ class AiVideoVerificationTest(unittest.TestCase):
             response.auth_expires_at,
             next_auth_time + timedelta(seconds=60),
         )
+        self.assertTrue(response.can_retake)
+        self.assertEqual(response.failure_type, "retake")
 
     def test_verification_result_response_hides_retake_expiration_for_low_score_failure(self):
         next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
@@ -544,6 +546,34 @@ class AiVideoVerificationTest(unittest.TestCase):
         response = _verification_result_response(auth_log)
 
         self.assertIsNone(response.auth_expires_at)
+        self.assertFalse(response.can_retake)
+        self.assertEqual(response.failure_type, "final_failure")
+
+    def test_verification_result_response_marks_timeout_as_final_failure(self):
+        next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        auth_log = SimpleNamespace(
+            id=1,
+            study_session_id=2,
+            status="시간초과",
+            video_url="https://storage.test/video.mp4",
+            verification_score=None,
+            verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
+            scene_score=None,
+            text_score=None,
+            quality_score=None,
+            forbidden_penalty=None,
+            representative_frame_path=None,
+            created_at=next_auth_time - timedelta(seconds=30),
+            verified_at=next_auth_time,
+            session=SimpleNamespace(next_auth_time=next_auth_time),
+        )
+
+        response = _verification_result_response(auth_log)
+
+        self.assertEqual(response.status, "시간초과")
+        self.assertIsNone(response.auth_expires_at)
+        self.assertFalse(response.can_retake)
+        self.assertEqual(response.failure_type, "final_failure")
 
 
 if __name__ == "__main__":

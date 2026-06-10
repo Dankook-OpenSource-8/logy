@@ -232,9 +232,10 @@ def _video_extension(content_type: str, filename: str | None) -> str:
 
 def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
     next_auth_time = auth_log.session.next_auth_time if auth_log.session else None
+    can_retake = _auth_log_allows_retake(auth_log)
     retake_expires_at = (
         auth_expires_at(next_auth_time)
-        if next_auth_time and _auth_log_allows_retake(auth_log)
+        if next_auth_time and can_retake
         else None
     )
     return VideoVerificationResultResponse(
@@ -252,6 +253,8 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
         created_at=to_kst(auth_log.created_at),
         verified_at=to_kst(auth_log.verified_at),
         auth_expires_at=to_kst(retake_expires_at),
+        can_retake=can_retake,
+        failure_type=_verification_failure_type(auth_log),
     )
 
 
@@ -269,6 +272,14 @@ def _auth_log_allows_retake(auth_log: AuthLog) -> bool:
     if verification_score is None or verification_score < RETAKE_THRESHOLD:
         return False
     return auth_log.status == "실패" and any(marker in reason for marker in RETAKE_REASON_MARKERS)
+
+
+def _verification_failure_type(auth_log: AuthLog) -> str | None:
+    if auth_log.status in {"대기", "성공"}:
+        return None
+    if _auth_log_allows_retake(auth_log):
+        return "retake"
+    return "final_failure"
 
 
 def _nickname_exists(db: Session, nickname: str) -> bool:
@@ -1968,8 +1979,10 @@ def request_video_verification(
             return VideoVerificationResponse(
                 message="인증 제한 시간이 초과되어 실패 처리되었습니다.",
                 auth_log_id=auth_log.id,
-                status=auth_log.status,
-                auth_expires_at=to_kst(expires_at),
+                status="실패",
+                auth_expires_at=None,
+                can_retake=False,
+                failure_type="final_failure",
             )
 
     auth_log = AuthLog(
@@ -1990,6 +2003,8 @@ def request_video_verification(
         auth_log_id=auth_log.id,
         status=auth_log.status,
         auth_expires_at=to_kst(expires_at),
+        can_retake=False,
+        failure_type=None,
     )
 
 
