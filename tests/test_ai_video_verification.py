@@ -299,6 +299,66 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(result.status, "실패")
         self.assertIn("재인증", result.reason)
 
+    def test_low_score_timeout_is_final_failure_not_retake(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+            frame_result = FrameVerificationResult(
+                frame_path=frame_path,
+                total_score=0,
+                scene_score=0,
+                text_score=0,
+                quality_score=10,
+                forbidden_penalty=0,
+                scene_reason="scene",
+                text_reason="text",
+                classifier_reason="classifier",
+            )
+
+            with (
+                patch("core.ai_video_verification.download_video"),
+                patch("core.ai_video_verification.extract_candidate_frames", return_value=[frame_path]),
+                patch("core.ai_video_verification.select_best_verification_frame", return_value=frame_result),
+                patch("core.ai_video_verification.time.monotonic", side_effect=[0, 61]),
+            ):
+                result = verify_study_video("https://storage.test/video.mp4", "데이터베이스")
+
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "실패")
+        self.assertEqual(result.total_score, 0)
+        self.assertNotIn("재인증", result.reason)
+        self.assertNotIn("재촬영", result.reason)
+
+    def test_low_score_ocr_timeout_is_final_failure_not_retake(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+            frame_result = FrameVerificationResult(
+                frame_path=frame_path,
+                total_score=30,
+                scene_score=30,
+                text_score=0,
+                quality_score=10,
+                forbidden_penalty=0,
+                scene_reason="scene",
+                text_reason="OCRTimeout: OCR 처리 시간이 40초를 초과했습니다.",
+                classifier_reason="classifier",
+            )
+
+            with (
+                patch("core.ai_video_verification.download_video"),
+                patch("core.ai_video_verification.extract_candidate_frames", return_value=[frame_path]),
+                patch("core.ai_video_verification.select_best_verification_frame", return_value=frame_result),
+                patch("core.ai_video_verification.time.monotonic", side_effect=[0, 20]),
+            ):
+                result = verify_study_video("https://storage.test/video.mp4", "데이터베이스")
+
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "실패")
+        self.assertEqual(result.total_score, 30)
+        self.assertNotIn("재인증", result.reason)
+        self.assertNotIn("재촬영", result.reason)
+
     def test_retake_result_keeps_auth_window_open(self):
         result = VerificationResult(
             approved=False,
@@ -461,6 +521,29 @@ class AiVideoVerificationTest(unittest.TestCase):
             response.auth_expires_at,
             next_auth_time + timedelta(seconds=60),
         )
+
+    def test_verification_result_response_hides_retake_expiration_for_low_score_failure(self):
+        next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        auth_log = SimpleNamespace(
+            id=1,
+            study_session_id=2,
+            status="실패",
+            video_url="https://storage.test/video.mp4",
+            verification_score=0,
+            verification_reason="학습 장면 또는 과목 관련성이 부족합니다.",
+            scene_score=0,
+            text_score=0,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+            created_at=next_auth_time - timedelta(seconds=30),
+            verified_at=next_auth_time,
+            session=SimpleNamespace(next_auth_time=next_auth_time),
+        )
+
+        response = _verification_result_response(auth_log)
+
+        self.assertIsNone(response.auth_expires_at)
 
 
 if __name__ == "__main__":

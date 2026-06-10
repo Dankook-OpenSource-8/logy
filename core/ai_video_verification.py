@@ -1425,7 +1425,9 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
 
         needs_retake_for_timeout = elapsed_seconds >= VERIFICATION_TIMEOUT_SECONDS
         approved = total_score >= APPROVAL_THRESHOLD and not needs_retake_for_timeout
-        if needs_retake_for_timeout:
+        if total_score < RETAKE_THRESHOLD:
+            reason = "학습 장면 또는 과목 관련성이 부족합니다."
+        elif needs_retake_for_timeout:
             reason = "인증 처리 시간이 초과되어 재인증이 필요합니다."
         elif has_ocr_timeout(text_reason):
             reason = "OCR 처리 시간이 초과되어 재촬영이 필요합니다."
