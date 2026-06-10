@@ -523,6 +523,8 @@ class AiVideoVerificationTest(unittest.TestCase):
         )
         self.assertTrue(response.can_retake)
         self.assertEqual(response.failure_type, "retake")
+        self.assertTrue(response.canRetake)
+        self.assertEqual(response.failureType, "retake")
 
     def test_verification_result_response_hides_retake_expiration_for_low_score_failure(self):
         next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
@@ -548,6 +550,8 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertIsNone(response.auth_expires_at)
         self.assertFalse(response.can_retake)
         self.assertEqual(response.failure_type, "final_failure")
+        self.assertFalse(response.canRetake)
+        self.assertEqual(response.failureType, "final_failure")
 
     def test_verification_result_response_marks_timeout_as_final_failure(self):
         next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
@@ -570,10 +574,12 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         response = _verification_result_response(auth_log)
 
-        self.assertEqual(response.status, "시간초과")
+        self.assertEqual(response.status, "실패")
         self.assertIsNone(response.auth_expires_at)
         self.assertFalse(response.can_retake)
         self.assertEqual(response.failure_type, "final_failure")
+        self.assertFalse(response.canRetake)
+        self.assertEqual(response.failureType, "final_failure")
 
 
 if __name__ == "__main__":
