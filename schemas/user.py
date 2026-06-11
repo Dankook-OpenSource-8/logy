@@ -47,6 +47,8 @@ class AuthResponse(KSTBaseModel):
 class NicknameCheckResponse(KSTBaseModel):
     nickname: str
     available: bool
+    isAvailable: bool
+    exists: bool
 
 
 class StudySessionStartRequest(KSTBaseModel):

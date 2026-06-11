@@ -942,9 +942,7 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/users/check-nickname", response_model=NicknameCheckResponse)
-def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
-    # 닉네임 사용 가능 여부를 조회합니다.
+def _nickname_check_response(nickname: str, db: Session) -> NicknameCheckResponse:
     cleaned_nickname = _normalize(nickname)
     if not cleaned_nickname:
         raise HTTPException(
@@ -953,7 +951,25 @@ def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameChec
         )
 
     exists = _nickname_exists(db, cleaned_nickname)
-    return NicknameCheckResponse(nickname=cleaned_nickname, available=not exists)
+    available = not exists
+    return NicknameCheckResponse(
+        nickname=cleaned_nickname,
+        available=available,
+        isAvailable=available,
+        exists=exists,
+    )
+
+
+@router.get("/users/check-nickname", response_model=NicknameCheckResponse)
+def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
+    # 닉네임 사용 가능 여부를 조회합니다.
+    return _nickname_check_response(nickname, db)
+
+
+@router.get("/users/check-nickname/{nickname}", response_model=NicknameCheckResponse)
+def check_nickname_path(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
+    # 프론트가 경로 파라미터 방식으로 호출해도 같은 중복 검사 기준을 적용합니다.
+    return _nickname_check_response(nickname, db)
 
 
 @router.post("/users/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
