@@ -271,7 +271,7 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertTrue(result.approved)
         self.assertEqual(result.status, "성공")
 
-    def test_video_verification_requests_retake_after_total_timeout(self):
+    def test_video_verification_approves_high_score_even_after_slow_processing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             frame_path = Path(temp_dir) / "frame.jpg"
             frame_path.write_bytes(b"fake")
@@ -295,9 +295,9 @@ class AiVideoVerificationTest(unittest.TestCase):
             ):
                 result = verify_study_video("https://storage.test/video.mp4", "데이터베이스")
 
-        self.assertFalse(result.approved)
-        self.assertEqual(result.status, "실패")
-        self.assertIn("재인증", result.reason)
+        self.assertTrue(result.approved)
+        self.assertEqual(result.status, "성공")
+        self.assertNotIn("재인증", result.reason)
 
     def test_low_score_timeout_is_final_failure_not_retake(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -580,6 +580,82 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(response.failure_type, "final_failure")
         self.assertFalse(response.canRetake)
         self.assertEqual(response.failureType, "final_failure")
+
+    def test_verification_result_response_normalizes_approved_status(self):
+        next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        auth_log = SimpleNamespace(
+            id=1,
+            study_session_id=2,
+            status="APPROVED",
+            video_url="https://storage.test/video.mp4",
+            verification_score=88,
+            verification_reason="학습 인증이 완료되었습니다.",
+            scene_score=50,
+            text_score=28,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+            created_at=next_auth_time - timedelta(seconds=30),
+            verified_at=next_auth_time,
+            session=SimpleNamespace(next_auth_time=next_auth_time),
+        )
+
+        response = _verification_result_response(auth_log)
+
+        self.assertEqual(response.status, "성공")
+        self.assertIsNone(response.failure_type)
+        self.assertFalse(response.can_retake)
+
+    def test_verification_result_response_normalizes_rejected_status(self):
+        next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        auth_log = SimpleNamespace(
+            id=1,
+            study_session_id=2,
+            status="REJECTED",
+            video_url="https://storage.test/video.mp4",
+            verification_score=20,
+            verification_reason="학습 장면 또는 과목 관련성이 부족합니다.",
+            scene_score=10,
+            text_score=0,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+            created_at=next_auth_time - timedelta(seconds=30),
+            verified_at=next_auth_time,
+            session=SimpleNamespace(next_auth_time=next_auth_time),
+        )
+
+        response = _verification_result_response(auth_log)
+
+        self.assertEqual(response.status, "실패")
+        self.assertEqual(response.failure_type, "final_failure")
+        self.assertFalse(response.can_retake)
+
+    def test_verification_result_response_allows_retake_from_50_to_64_points(self):
+        next_auth_time = datetime(2026, 6, 9, 13, 40, tzinfo=timezone.utc)
+        auth_log = SimpleNamespace(
+            id=1,
+            study_session_id=2,
+            status="실패",
+            video_url="https://storage.test/video.mp4",
+            verification_score=50,
+            verification_reason="학습 여부가 애매하여 재촬영이 필요합니다.",
+            scene_score=35,
+            text_score=15,
+            quality_score=10,
+            forbidden_penalty=0,
+            representative_frame_path=None,
+            created_at=next_auth_time - timedelta(seconds=30),
+            verified_at=next_auth_time,
+            session=SimpleNamespace(next_auth_time=next_auth_time),
+        )
+
+        response = _verification_result_response(auth_log)
+
+        self.assertEqual(response.status, "실패")
+        self.assertTrue(response.can_retake)
+        self.assertEqual(response.failure_type, "retake")
+        self.assertEqual(response.auth_expires_at, next_auth_time + timedelta(seconds=60))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 import secrets
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
@@ -230,10 +231,25 @@ def _video_extension(content_type: str, filename: str | None) -> str:
     return ".mp4"
 
 
+def _normalize_verification_status(status_value: str | None) -> str | None:
+    if status_value is None:
+        return None
+    normalized = status_value.strip()
+    upper = normalized.upper()
+    if upper in {"APPROVED", "SUCCESS", "SUCCEEDED"}:
+        return "성공"
+    if upper in {"REJECTED", "FAILURE", "FAILED"}:
+        return "실패"
+    if upper in {"TIMEOUT", "TIMED_OUT"}:
+        return "시간초과"
+    return normalized
+
+
 def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultResponse:
     next_auth_time = auth_log.session.next_auth_time if auth_log.session else None
     can_retake = _auth_log_allows_retake(auth_log)
     failure_type = _verification_failure_type(auth_log)
+    response_status = _normalize_verification_status(auth_log.status)
     retake_expires_at = (
         auth_expires_at(next_auth_time)
         if next_auth_time and can_retake
@@ -242,13 +258,12 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
     return VideoVerificationResultResponse(
         auth_log_id=auth_log.id,
         study_session_id=auth_log.study_session_id,
-        status="실패" if failure_type == "final_failure" else auth_log.status,
+        status="실패" if failure_type == "final_failure" else response_status,
         video_url=auth_log.video_url,
         verification_score=auth_log.verification_score,
         verification_reason=auth_log.verification_reason,
         scene_score=auth_log.scene_score,
         text_score=auth_log.text_score,
-        quality_score=auth_log.quality_score,
         forbidden_penalty=auth_log.forbidden_penalty,
         representative_frame_path=auth_log.representative_frame_path,
         created_at=to_kst(auth_log.created_at),
@@ -262,7 +277,7 @@ def _verification_result_response(auth_log: AuthLog) -> VideoVerificationResultR
 
 
 def _should_allow_auth_retake(result) -> bool:
-    if result.approved or result.status != "실패":
+    if result.approved or _normalize_verification_status(result.status) != "실패":
         return False
     if result.total_score < RETAKE_THRESHOLD:
         return False
@@ -274,11 +289,14 @@ def _auth_log_allows_retake(auth_log: AuthLog) -> bool:
     verification_score = getattr(auth_log, "verification_score", None)
     if verification_score is None or verification_score < RETAKE_THRESHOLD:
         return False
-    return auth_log.status == "실패" and any(marker in reason for marker in RETAKE_REASON_MARKERS)
+    return _normalize_verification_status(auth_log.status) == "실패" and any(
+        marker in reason for marker in RETAKE_REASON_MARKERS
+    )
 
 
 def _verification_failure_type(auth_log: AuthLog) -> str | None:
-    if auth_log.status in {"대기", "성공"}:
+    normalized_status = _normalize_verification_status(auth_log.status)
+    if normalized_status in {"대기", "성공"}:
         return None
     if _auth_log_allows_retake(auth_log):
         return "retake"
@@ -307,7 +325,7 @@ def _session_has_recent_retake_request(db: Session, study_session_id: int, user_
         .all()
     )
     for auth_log in recent_logs:
-        if auth_log.status == "성공":
+        if _normalize_verification_status(auth_log.status) == "성공":
             return False
         if _auth_log_allows_retake(auth_log):
             return True
@@ -411,17 +429,33 @@ def _group_today_study_seconds(db: Session, group_id: int, now: datetime | None 
     return _group_verified_study_seconds(db, group_id, day_start, day_end)
 
 
-def _user_verified_study_seconds(db: Session, user_id) -> int:
-    total = (
+def _user_verified_study_seconds(
+    db: Session,
+    user_id,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> int:
+    query = (
         db.query(func.coalesce(func.sum(RewardLedger.verified_seconds), 0))
         .filter(RewardLedger.user_id == user_id)
-        .scalar()
     )
+    if start_at is not None or end_at is not None:
+        query = query.join(AuthLog, AuthLog.id == RewardLedger.auth_log_id)
+        if start_at is not None:
+            query = query.filter(AuthLog.verified_at >= start_at)
+        if end_at is not None:
+            query = query.filter(AuthLog.verified_at < end_at)
+    total = query.scalar()
     return int(total or 0)
 
 
 def _user_total_study_seconds(db: Session, user_id) -> int:
     return _user_verified_study_seconds(db, user_id)
+
+
+def _user_today_study_seconds(db: Session, user_id, now: datetime | None = None) -> int:
+    day_start, day_end = app_day_bounds(app_date(now))
+    return _user_verified_study_seconds(db, user_id, day_start, day_end)
 
 
 def _verified_study_seconds_for_session(db: Session, study_session_id: int) -> int:
@@ -824,7 +858,7 @@ def _settle_success_reward(
     if existing_log is not None:
         _sync_user_total_study_time(db, user)
         return existing_log
-    if auth_log.status != "성공":
+    if _normalize_verification_status(auth_log.status) != "성공":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="성공한 인증만 보상을 정산할 수 있습니다",
@@ -905,7 +939,7 @@ def _run_video_verification(auth_log_id: int) -> None:
             return
 
         verified_at = datetime.now(timezone.utc)
-        auth_log.status = result.status
+        auth_log.status = _normalize_verification_status(result.status)
         auth_log.verification_score = result.total_score
         auth_log.verification_reason = result.reason
         auth_log.scene_score = result.scene_score
@@ -942,9 +976,7 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/users/check-nickname", response_model=NicknameCheckResponse)
-def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
-    # 닉네임 사용 가능 여부를 조회합니다.
+def _nickname_check_response(nickname: str, db: Session) -> NicknameCheckResponse:
     cleaned_nickname = _normalize(nickname)
     if not cleaned_nickname:
         raise HTTPException(
@@ -953,7 +985,25 @@ def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameChec
         )
 
     exists = _nickname_exists(db, cleaned_nickname)
-    return NicknameCheckResponse(nickname=cleaned_nickname, available=not exists)
+    available = not exists
+    return NicknameCheckResponse(
+        nickname=cleaned_nickname,
+        available=available,
+        isAvailable=available,
+        exists=exists,
+    )
+
+
+@router.get("/users/check-nickname", response_model=NicknameCheckResponse)
+def check_nickname(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
+    # 닉네임 사용 가능 여부를 조회합니다.
+    return _nickname_check_response(nickname, db)
+
+
+@router.get("/users/check-nickname/{nickname}", response_model=NicknameCheckResponse)
+def check_nickname_path(nickname: str, db: Session = Depends(get_db)) -> NicknameCheckResponse:
+    # 프론트가 경로 파라미터 방식으로 호출해도 같은 중복 검사 기준을 적용합니다.
+    return _nickname_check_response(nickname, db)
 
 
 @router.post("/users/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -1447,6 +1497,7 @@ def get_group_members(
                 active_study_session_id=member.active_study_session_id,
                 last_seen_at=to_kst(member.last_seen_at),
                 total_study_seconds=_user_total_study_seconds(db, user.id),
+                today_study_seconds=_user_today_study_seconds(db, user.id),
             )
             for member, user in members
         ],
@@ -1507,6 +1558,7 @@ def update_group_presence(
         active_study_session_id=member.active_study_session_id,
         last_seen_at=to_kst(member.last_seen_at),
         total_study_seconds=_user_total_study_seconds(db, current_user.id),
+        today_study_seconds=_user_today_study_seconds(db, current_user.id),
     )
 
 
@@ -2053,6 +2105,7 @@ async def upload_auth_video(
     db: Session = Depends(get_db),
 ) -> VideoUploadResponse:
     # 4초 인증 영상을 Storage에 올리고 auth_logs에 인증 기록을 남깁니다.
+    upload_started_at = time.perf_counter()
     study_session = (
         db.query(StudySession)
         .filter(
@@ -2098,7 +2151,13 @@ async def upload_auth_video(
             detail="영상 파일만 업로드할 수 있습니다",
         )
 
+    read_started_at = time.perf_counter()
     file_bytes = await video.read()
+    print(
+        "[video-upload] read_file",
+        f"elapsed_ms={round((time.perf_counter() - read_started_at) * 1000)}",
+        f"bytes={len(file_bytes)}",
+    )
     if not file_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2107,7 +2166,17 @@ async def upload_auth_video(
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     file_path = f"{current_user.id}_{timestamp}{_video_extension(content_type, video.filename)}"
+    storage_started_at = time.perf_counter()
     video_url = upload_video(file_path, file_bytes, content_type)
+    print(
+        "[video-upload] storage_upload",
+        f"elapsed_ms={round((time.perf_counter() - storage_started_at) * 1000)}",
+        f"bytes={len(file_bytes)}",
+    )
+    print(
+        "[video-upload] upload_done",
+        f"elapsed_ms={round((time.perf_counter() - upload_started_at) * 1000)}",
+    )
 
     return VideoUploadResponse(
         message="영상 업로드 완료",
