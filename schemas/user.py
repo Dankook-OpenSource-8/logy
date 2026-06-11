@@ -337,7 +337,6 @@ class VideoVerificationResultResponse(KSTBaseModel):
     verification_reason: str | None
     scene_score: int | None
     text_score: int | None
-    quality_score: int | None
     forbidden_penalty: int | None
     representative_frame_path: str | None
     created_at: datetime
@@ -470,6 +469,7 @@ class GroupMemberResponse(KSTBaseModel):
     active_study_session_id: int | None
     last_seen_at: datetime | None
     total_study_seconds: int
+    today_study_seconds: int
 
 
 class GroupMembersResponse(KSTBaseModel):

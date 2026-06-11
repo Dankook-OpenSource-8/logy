@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 
 from api.routes import router
+from core.model_preload import preload_ai_models
 
 app = FastAPI(title="Logy Backend")
 
@@ -20,6 +21,11 @@ app.add_middleware(
 
 # 분리된 API 라우터를 FastAPI 앱에 연결합니다.
 app.include_router(router)
+
+
+@app.on_event("startup")
+def preload_models_on_startup() -> None:
+    preload_ai_models()
 
 
 @app.get("/auth-test", tags=["Test"])

@@ -1390,14 +1390,23 @@ def _short_error(error: Exception) -> str:
     return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
+def _perf_log(stage: str, started_at: float, **fields) -> None:
+    if not _env_bool("VERIFY_PERF_LOGS", True):
+        return
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+    suffix = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    print(f"[video-verify] {stage} elapsed_ms={elapsed_ms}" + (f" {suffix}" if suffix else ""))
+
+
 def verify_study_video(video_url: str, subject: str | None) -> VerificationResult:
-    started_at = time.monotonic()
+    started_at = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="logy_verify_") as temp_dir:
         work_dir = Path(temp_dir)
         video_path = work_dir / "source_video"
         download_video(video_url, video_path)
 
         frame_paths = extract_candidate_frames(video_path, work_dir)
+        _perf_log("frames_ready", started_at, frame_count=len(frame_paths))
         if not frame_paths:
             return VerificationResult(
                 approved=False,
@@ -1412,6 +1421,7 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
             )
 
         frame_result = select_best_verification_frame(frame_paths, subject)
+        _perf_log("frame_scored", started_at, total_score=frame_result.total_score)
         representative_frame = frame_result.frame_path
         quality_score = frame_result.quality_score
         scene_score = frame_result.scene_score
@@ -1421,14 +1431,9 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
         text_reason = frame_result.text_reason
         classifier_reason = frame_result.classifier_reason
         total_score = frame_result.total_score
-        elapsed_seconds = time.monotonic() - started_at
-
-        needs_retake_for_timeout = elapsed_seconds >= VERIFICATION_TIMEOUT_SECONDS
-        approved = total_score >= APPROVAL_THRESHOLD and not needs_retake_for_timeout
+        approved = total_score >= APPROVAL_THRESHOLD
         if total_score < RETAKE_THRESHOLD:
             reason = "학습 장면 또는 과목 관련성이 부족합니다."
-        elif needs_retake_for_timeout:
-            reason = "인증 처리 시간이 초과되어 재인증이 필요합니다."
         elif has_ocr_timeout(text_reason):
             reason = "OCR 처리 시간이 초과되어 재촬영이 필요합니다."
         elif total_score >= APPROVAL_THRESHOLD:
@@ -1444,7 +1449,7 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
         if details:
             reason = f"{reason} ({details})"
 
-        return VerificationResult(
+        result = VerificationResult(
             approved=approved,
             status="성공" if approved else "실패",
             total_score=total_score,
@@ -1455,21 +1460,26 @@ def verify_study_video(video_url: str, subject: str | None) -> VerificationResul
             forbidden_penalty=forbidden_penalty,
             representative_frame_path=save_representative_frame(representative_frame),
         )
+        _perf_log("verify_done", started_at, status=result.status, total_score=result.total_score)
+        return result
 
 
 def download_video(video_url: str, destination: Path) -> None:
+    started_at = time.perf_counter()
     request = urllib.request.Request(
         video_url,
         headers={"User-Agent": "LogyVideoVerifier/1.0"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         destination.write_bytes(response.read())
+    _perf_log("download_video", started_at, bytes=destination.stat().st_size)
 
 
 def extract_candidate_frames(video_path: Path, work_dir: Path) -> list[Path]:
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("FFmpeg가 설치되어 있지 않습니다.")
 
+    started_at = time.perf_counter()
     frame_paths: list[Path] = []
     for timestamp in FRAME_TIMESTAMPS:
         output_path = work_dir / f"frame_{str(timestamp).replace('.', '_')}.jpg"
@@ -1495,6 +1505,7 @@ def extract_candidate_frames(video_path: Path, work_dir: Path) -> list[Path]:
         if output_path.exists() and output_path.stat().st_size > 0:
             frame_paths.append(output_path)
 
+    _perf_log("extract_frames", started_at, frame_count=len(frame_paths))
     return frame_paths
 
 
@@ -1511,6 +1522,7 @@ def select_best_verification_frame(
     results: list[FrameVerificationResult] = []
     for frame_path in frame_paths:
         quality_score = score_frame_quality(frame_path)
+        extracted_text = extract_text(frame_path)
         classifier_result = score_with_study_classifier(frame_path)
         if classifier_result.available:
             scene_score = classifier_result.scene_score
@@ -1525,7 +1537,6 @@ def select_best_verification_frame(
                 else ""
             )
 
-        extracted_text = extract_text(frame_path)
         text_score, text_reason = score_subject_similarity(subject, extracted_text)
         total_score = max(
             0,
@@ -1657,7 +1668,9 @@ def extract_text(frame_path: Path) -> str:
     global _ocr_error
 
     try:
+        started_at = time.perf_counter()
         ocr_image_path = prepare_ocr_image(frame_path)
+        _perf_log("prepare_ocr_image", started_at, bytes=ocr_image_path.stat().st_size)
         server_text = read_text_from_ocr_server(ocr_image_path)
         if server_text is not None:
             return server_text
@@ -1733,6 +1746,7 @@ def read_text_from_ocr_server(ocr_image_path: Path) -> str | None:
 
     endpoint = server_url if server_url.endswith("/ocr") else f"{server_url}/ocr"
     timeout_seconds = int(os.getenv("OCR_SERVER_TIMEOUT_SECONDS", str(OCR_SERVER_TIMEOUT_SECONDS)))
+    started_at = time.perf_counter()
     try:
         import httpx
 
@@ -1745,9 +1759,11 @@ def read_text_from_ocr_server(ocr_image_path: Path) -> str | None:
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
+        _perf_log("ocr_server", started_at, status="error")
         _ocr_error = f"OCRServerError: {_short_error(exc)}"
         return ""
 
+    _perf_log("ocr_server", started_at, status="ok")
     if isinstance(payload, dict):
         text = payload.get("text")
         if isinstance(text, str):

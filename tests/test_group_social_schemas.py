@@ -7,6 +7,7 @@ from schemas.user import (
     GroupMembersResponse,
     GroupResponse,
     GroupJoinRequest,
+    GroupMemberResponse,
     GroupMemberStatusUpdateRequest,
     GroupPokeCreateRequest,
 )
@@ -46,15 +47,27 @@ class GroupSocialSchemaTest(unittest.TestCase):
         self.assertEqual(payload.group_today_study_seconds, 1800)
 
     def test_group_members_response_exposes_today_study_seconds(self):
+        member = GroupMemberResponse(
+            user_id=uuid4(),
+            nickname="로기",
+            role="member",
+            online_status="online",
+            study_status="idle",
+            active_study_session_id=None,
+            last_seen_at="2026-06-05T12:00:00Z",
+            total_study_seconds=7200,
+            today_study_seconds=1800,
+        )
         payload = GroupMembersResponse(
             group_id=1,
             group_name="오픈소스 8조",
             group_total_study_seconds=7200,
             group_today_study_seconds=1800,
-            members=[],
+            members=[member],
         )
 
         self.assertEqual(payload.group_today_study_seconds, 1800)
+        self.assertEqual(payload.members[0].today_study_seconds, 1800)
 
     def test_group_join_request_accepts_invite_code(self):
         payload = GroupJoinRequest(invite_code="ABCD1234")
