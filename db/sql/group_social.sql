@@ -48,10 +48,14 @@ CREATE TABLE IF NOT EXISTS group_poke_logs (
     group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
     sender_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reaction_type VARCHAR NOT NULL DEFAULT 'poke',
     message VARCHAR,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE group_poke_logs
+    ADD COLUMN IF NOT EXISTS reaction_type VARCHAR NOT NULL DEFAULT 'poke';
 
 CREATE INDEX IF NOT EXISTS ix_group_poke_logs_group_id
     ON group_poke_logs(group_id);
@@ -61,3 +65,37 @@ CREATE INDEX IF NOT EXISTS ix_group_poke_logs_target_user_id
 
 CREATE INDEX IF NOT EXISTS ix_group_poke_logs_created_at
     ON group_poke_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS group_notification_events (
+    id SERIAL PRIMARY KEY,
+    group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
+    event_type VARCHAR NOT NULL,
+    actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    reaction_type VARCHAR,
+    message VARCHAR,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_group_notification_events_group_id
+    ON group_notification_events(group_id);
+
+CREATE INDEX IF NOT EXISTS ix_group_notification_events_actor_user_id
+    ON group_notification_events(actor_user_id);
+
+CREATE INDEX IF NOT EXISTS ix_group_notification_events_created_at
+    ON group_notification_events(created_at);
+
+CREATE TABLE IF NOT EXISTS group_notification_reads (
+    id SERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL REFERENCES group_notification_events(id) ON DELETE CASCADE,
+    read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_group_notification_reads_user_event UNIQUE (user_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_group_notification_reads_user_id
+    ON group_notification_reads(user_id);
+
+CREATE INDEX IF NOT EXISTS ix_group_notification_reads_event_id
+    ON group_notification_reads(event_id);

@@ -4,7 +4,10 @@ import unittest
 
 from fastapi import HTTPException
 
+from core.timezone import APP_TIMEZONE
 from api.routes import (
+    _group_push_body,
+    _is_quiet_time,
     _notification_settings_response,
     _notification_weekdays_to_db,
     _notification_weekdays_to_list,
@@ -88,6 +91,28 @@ class NotificationSettingsTest(unittest.TestCase):
         self.assertFalse(response.randomAuthEnabled)
         self.assertEqual(response.quietStartTime, time(23, 0))
         self.assertEqual(response.quietWeekdays, [0, 1, 2, 3, 4])
+
+    def test_quiet_time_supports_overnight_ranges(self):
+        setting = SimpleNamespace(
+            quiet_hours_enabled=True,
+            quiet_start_time=time(23, 0),
+            quiet_end_time=time(8, 0),
+            quiet_weekdays="0,1,2,3,4",
+        )
+
+        self.assertTrue(_is_quiet_time(setting, datetime(2026, 6, 8, 23, 30, tzinfo=APP_TIMEZONE)))
+        self.assertTrue(_is_quiet_time(setting, datetime(2026, 6, 9, 7, 30, tzinfo=APP_TIMEZONE)))
+        self.assertFalse(_is_quiet_time(setting, datetime(2026, 6, 9, 12, 0, tzinfo=APP_TIMEZONE)))
+
+    def test_group_push_body_formats_join_and_reaction_events(self):
+        self.assertEqual(
+            _group_push_body("join", "오픈소스 8조", "로기"),
+            "로기님이 오픈소스 8조에 참여했어요",
+        )
+        self.assertEqual(
+            _group_push_body("reaction", "오픈소스 8조", "로기", "코덱스", "heart"),
+            "로기님이 코덱스님에게 하트 보냈어요",
+        )
 
 
 if __name__ == "__main__":
