@@ -9,6 +9,9 @@ from schemas.user import (
     GroupJoinRequest,
     GroupMemberResponse,
     GroupMemberStatusUpdateRequest,
+    GroupNotificationMarkReadResponse,
+    GroupNotificationResponse,
+    GroupNotificationUnreadCountResponse,
     GroupPokeCreateRequest,
 )
 
@@ -85,11 +88,67 @@ class GroupSocialSchemaTest(unittest.TestCase):
         target_user_id = uuid4()
         payload = GroupPokeCreateRequest(
             target_user_id=target_user_id,
+            reaction_type="heart",
             message="공부하자",
         )
 
         self.assertEqual(payload.target_user_id, target_user_id)
+        self.assertEqual(payload.reaction_type, "heart")
         self.assertEqual(payload.message, "공부하자")
+
+    def test_group_notification_response_exposes_reaction_context(self):
+        sender_user_id = uuid4()
+        target_user_id = uuid4()
+        payload = GroupNotificationResponse(
+            id=1,
+            group_id=2,
+            group_name="오픈소스 8조",
+            event_type="reaction",
+            sender_user_id=sender_user_id,
+            sender_nickname="로기",
+            target_user_id=target_user_id,
+            target_nickname="코덱스",
+            reaction_type="fighting",
+            message="힘내",
+            is_read=False,
+            created_at="2026-06-05T12:00:00Z",
+        )
+
+        self.assertEqual(payload.sender_user_id, sender_user_id)
+        self.assertEqual(payload.reaction_type, "fighting")
+        self.assertFalse(payload.is_read)
+
+    def test_group_join_notification_response_allows_join_event(self):
+        actor_user_id = uuid4()
+        payload = GroupNotificationResponse(
+            id=2,
+            group_id=2,
+            group_name="오픈소스 8조",
+            event_type="join",
+            sender_user_id=actor_user_id,
+            sender_nickname="새멤버",
+            target_user_id=actor_user_id,
+            target_nickname="새멤버",
+            reaction_type=None,
+            message="그룹 참여",
+            is_read=False,
+            created_at="2026-06-05T12:00:00Z",
+        )
+
+        self.assertEqual(payload.event_type, "join")
+        self.assertIsNone(payload.reaction_type)
+
+    def test_group_notification_badge_responses_expose_camel_count(self):
+        unread = GroupNotificationUnreadCountResponse(unread_count=3, unreadCount=3)
+        marked = GroupNotificationMarkReadResponse(
+            message="그룹 알림 읽음 처리",
+            marked_count=3,
+            unread_count=0,
+            unreadCount=0,
+        )
+
+        self.assertEqual(unread.unreadCount, 3)
+        self.assertEqual(marked.unreadCount, 0)
 
 
 if __name__ == "__main__":

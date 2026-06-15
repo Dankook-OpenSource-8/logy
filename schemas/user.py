@@ -435,6 +435,7 @@ class GroupResponse(KSTBaseModel):
     invite_code: str
     owner_user_id: UUID
     member_count: int
+    is_member: bool = False
     group_total_study_seconds: int
     group_today_study_seconds: int
     created_at: datetime
@@ -482,6 +483,7 @@ class GroupMembersResponse(KSTBaseModel):
 
 class GroupPokeCreateRequest(KSTBaseModel):
     target_user_id: UUID
+    reaction_type: str = Field(default="poke", max_length=20)
     message: str | None = Field(default=None, max_length=100)
 
 
@@ -491,4 +493,32 @@ class GroupPokeResponse(KSTBaseModel):
     group_id: int
     sender_user_id: UUID
     target_user_id: UUID
+    reaction_type: str
     created_at: datetime
+
+
+class GroupNotificationResponse(KSTBaseModel):
+    id: int
+    group_id: int
+    group_name: str
+    event_type: str
+    sender_user_id: UUID
+    sender_nickname: str
+    target_user_id: UUID | None
+    target_nickname: str | None
+    reaction_type: str | None
+    message: str | None
+    is_read: bool
+    created_at: datetime
+
+
+class GroupNotificationUnreadCountResponse(KSTBaseModel):
+    unread_count: int
+    unreadCount: int
+
+
+class GroupNotificationMarkReadResponse(KSTBaseModel):
+    message: str
+    marked_count: int
+    unread_count: int
+    unreadCount: int

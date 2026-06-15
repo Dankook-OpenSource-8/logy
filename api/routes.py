@@ -5,10 +5,11 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from core.ai_video_verification import RETAKE_THRESHOLD, verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
+from core.expo_push import send_expo_push_notifications
 from core.random_auth_schedule import (
     auth_expires_at,
     is_auth_expired,
@@ -32,7 +33,7 @@ from core.study_archive import (
     build_weekly_archive,
 )
 from core.storage import upload_video
-from core.timezone import app_date, app_day_bounds, app_now_date, to_kst
+from core.timezone import APP_TIMEZONE, app_date, app_day_bounds, app_now_date, to_kst
 from db.database import SessionLocal, get_db
 from db.models import (
     AuthLog,
@@ -41,6 +42,8 @@ from db.models import (
     FurniturePlacement,
     FocusInterruption,
     GroupMember,
+    GroupNotificationEvent,
+    GroupNotificationRead,
     GroupPokeLog,
     RewardLedger,
     SessionStatus,
@@ -66,6 +69,9 @@ from schemas import (
     GroupMembersResponse,
     GroupMemberResponse,
     GroupMemberStatusUpdateRequest,
+    GroupNotificationMarkReadResponse,
+    GroupNotificationResponse,
+    GroupNotificationUnreadCountResponse,
     GroupPokeCreateRequest,
     GroupPokeResponse,
     GroupResponse,
@@ -105,6 +111,7 @@ ONLINE_STATUSES = {"online", "offline"}
 STUDY_STATUSES = {"idle", "studying", "paused", "verifying", "failed", "completed"}
 RETAKE_REASON_MARKERS = ("재촬영", "재인증")
 GROUP_VISIBILITIES = {"public", "private"}
+GROUP_REACTION_TYPES = {"poke", "heart", "fighting", "smile", "clap", "fire"}
 REST_DAILY_MAX_COUNT = 2
 REST_DAILY_MAX_SECONDS = 15 * 60
 DEFAULT_FURNITURE_CODE = "desk"
@@ -191,6 +198,28 @@ def _notification_settings_response(
         createdAt=setting.created_at,
         updatedAt=setting.updated_at,
     )
+
+
+def _is_quiet_time(setting: UserNotificationSetting | None, now: datetime | None = None) -> bool:
+    if setting is None or not setting.quiet_hours_enabled:
+        return False
+    if setting.quiet_start_time is None or setting.quiet_end_time is None:
+        return False
+
+    now = now or datetime.now(APP_TIMEZONE)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=APP_TIMEZONE)
+    local_now = now.astimezone(APP_TIMEZONE)
+    quiet_weekdays = _notification_weekdays_to_list(setting.quiet_weekdays)
+    if quiet_weekdays and local_now.weekday() not in quiet_weekdays:
+        return False
+
+    current_time = local_now.time()
+    start_time = setting.quiet_start_time
+    end_time = setting.quiet_end_time
+    if start_time <= end_time:
+        return start_time <= current_time < end_time
+    return current_time >= start_time or current_time < end_time
 
 
 def _study_session_response(study_session: StudySession) -> StudySessionResponse:
@@ -471,7 +500,175 @@ def _sync_user_total_study_time(db: Session, user: User) -> None:
     user.total_study_time = _user_verified_study_seconds(db, user.id)
 
 
-def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
+def _is_group_member(db: Session, group_id: int, user_id) -> bool:
+    return (
+        db.query(GroupMember.id)
+        .filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == user_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _add_group_member(db: Session, group: StudyGroup, user: User) -> bool:
+    existing_member = (
+        db.query(GroupMember)
+        .filter(
+            GroupMember.group_id == group.id,
+            GroupMember.user_id == user.id,
+        )
+        .first()
+    )
+    if existing_member is not None:
+        return False
+
+    db.add(
+        GroupMember(
+            group_id=group.id,
+            user_id=user.id,
+            role="member",
+            online_status="online",
+            study_status="idle",
+            last_seen_at=datetime.now(timezone.utc),
+        )
+    )
+    return True
+
+
+def _add_group_notification_event(
+    db: Session,
+    group_id: int,
+    event_type: str,
+    actor_user_id,
+    target_user_id=None,
+    reaction_type: str | None = None,
+    message: str | None = None,
+) -> GroupNotificationEvent:
+    event = GroupNotificationEvent(
+        group_id=group_id,
+        event_type=event_type,
+        actor_user_id=actor_user_id,
+        target_user_id=target_user_id,
+        reaction_type=reaction_type,
+        message=message,
+    )
+    db.add(event)
+    return event
+
+
+GROUP_REACTION_LABELS = {
+    "poke": "콕 찌르기",
+    "heart": "하트",
+    "fighting": "화이팅",
+    "smile": "웃음",
+    "clap": "박수",
+    "fire": "불꽃",
+}
+
+
+def _group_push_body(
+    event_type: str,
+    group_name: str,
+    actor_nickname: str,
+    target_nickname: str | None = None,
+    reaction_type: str | None = None,
+) -> str:
+    if event_type == "join":
+        return f"{actor_nickname}님이 {group_name}에 참여했어요"
+    reaction_label = GROUP_REACTION_LABELS.get(reaction_type or "poke", "콕 찌르기")
+    if target_nickname:
+        return f"{actor_nickname}님이 {target_nickname}님에게 {reaction_label} 보냈어요"
+    return f"{actor_nickname}님이 {group_name}에 {reaction_label} 보냈어요"
+
+
+def _group_push_tokens(db: Session, group_id: int, actor_user_id) -> list[str]:
+    rows = (
+        db.query(UserPushToken, UserNotificationSetting)
+        .join(GroupMember, GroupMember.user_id == UserPushToken.user_id)
+        .outerjoin(UserNotificationSetting, UserNotificationSetting.user_id == UserPushToken.user_id)
+        .filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id != actor_user_id,
+            UserPushToken.is_active.is_(True),
+        )
+        .all()
+    )
+
+    tokens: list[str] = []
+    for push_token, setting in rows:
+        if setting is not None and (
+            not setting.all_notifications_enabled
+            or not setting.group_enabled
+            or _is_quiet_time(setting)
+        ):
+            continue
+        tokens.append(push_token.expo_push_token)
+    return tokens
+
+
+def _send_group_push_notifications_task(
+    tokens: list[str],
+    title: str,
+    body: str,
+    data: dict,
+) -> None:
+    invalid_tokens = send_expo_push_notifications(tokens, title, body, data)
+    if not invalid_tokens:
+        return
+
+    db = SessionLocal()
+    try:
+        (
+            db.query(UserPushToken)
+            .filter(UserPushToken.expo_push_token.in_(invalid_tokens))
+            .update({UserPushToken.is_active: False}, synchronize_session=False)
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _queue_group_push_notifications(
+    background_tasks: BackgroundTasks,
+    db: Session,
+    group: StudyGroup,
+    event_type: str,
+    actor_user: User,
+    target_user: User | None = None,
+    reaction_type: str | None = None,
+    event_id: int | None = None,
+) -> None:
+    tokens = _group_push_tokens(db, group.id, actor_user.id)
+    if not tokens:
+        return
+
+    body = _group_push_body(
+        event_type=event_type,
+        group_name=group.name,
+        actor_nickname=actor_user.nickname,
+        target_nickname=target_user.nickname if target_user else None,
+        reaction_type=reaction_type,
+    )
+    background_tasks.add_task(
+        _send_group_push_notifications_task,
+        tokens,
+        "그룹 알림",
+        body,
+        {
+            "type": "group_notification",
+            "eventType": event_type,
+            "eventId": event_id,
+            "groupId": group.id,
+            "reactionType": reaction_type,
+            "actorUserId": str(actor_user.id),
+            "targetUserId": str(target_user.id) if target_user else None,
+        },
+    )
+
+
+def _group_response(db: Session, group: StudyGroup, user_id=None) -> GroupResponse:
     member_count = (
         db.query(func.count(GroupMember.id))
         .filter(GroupMember.group_id == group.id)
@@ -484,6 +681,7 @@ def _group_response(db: Session, group: StudyGroup) -> GroupResponse:
         invite_code=group.invite_code,
         owner_user_id=group.owner_user_id,
         member_count=int(member_count or 0),
+        is_member=_is_group_member(db, group.id, user_id) if user_id else False,
         group_total_study_seconds=_group_total_study_seconds(db, group.id),
         group_today_study_seconds=_group_today_study_seconds(db, group.id),
         created_at=to_kst(group.created_at),
@@ -1367,7 +1565,7 @@ def create_group(
     )
     db.commit()
     db.refresh(group)
-    return _group_response(db, group)
+    return _group_response(db, group, current_user.id)
 
 
 @router.get("/groups/search", response_model=list[GroupResponse])
@@ -1385,7 +1583,7 @@ def search_public_groups(
         groups_query = groups_query.filter(StudyGroup.name.ilike(f"%{query.strip()}%"))
 
     groups = groups_query.limit(30).all()
-    return [_group_response(db, group) for group in groups]
+    return [_group_response(db, group, current_user.id) for group in groups]
 
 
 @router.get("/groups", response_model=list[GroupResponse])
@@ -1400,7 +1598,7 @@ def list_my_groups(
         .order_by(StudyGroup.created_at.desc())
         .all()
     )
-    return [_group_response(db, group) for group in groups]
+    return [_group_response(db, group, current_user.id) for group in groups]
 
 
 @router.post("/groups/{group_id}/invites", response_model=GroupInviteResponse)
@@ -1422,6 +1620,7 @@ def get_group_invite(
 @router.post("/groups/join", response_model=GroupJoinResponse)
 def join_group(
     payload: GroupJoinRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GroupJoinResponse:
@@ -1433,30 +1632,96 @@ def join_group(
             detail="유효하지 않은 초대 코드입니다",
         )
 
-    existing_member = (
-        db.query(GroupMember)
-        .filter(
-            GroupMember.group_id == group.id,
-            GroupMember.user_id == current_user.id,
+    created = _add_group_member(db, group, current_user)
+    event = None
+    if created:
+        event = _add_group_notification_event(
+            db,
+            group.id,
+            "join",
+            current_user.id,
+            target_user_id=current_user.id,
+            message="그룹 참여",
         )
-        .first()
-    )
-    if existing_member is None:
-        db.add(
-            GroupMember(
-                group_id=group.id,
-                user_id=current_user.id,
-                role="member",
-                online_status="online",
-                study_status="idle",
-                last_seen_at=datetime.now(timezone.utc),
-            )
-        )
+        try:
+            db.flush()
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            created = False
+    else:
         db.commit()
 
+    if created and event is not None:
+        _queue_group_push_notifications(
+            background_tasks,
+            db,
+            group,
+            "join",
+            current_user,
+            target_user=current_user,
+            event_id=event.id,
+        )
+
     return GroupJoinResponse(
-        message="그룹 참여 완료",
-        group=_group_response(db, group),
+        message="이미 참여 중인 그룹입니다" if not created else "그룹 참여 완료",
+        group=_group_response(db, group, current_user.id),
+    )
+
+
+@router.post("/groups/{group_id}/join", response_model=GroupJoinResponse)
+def join_public_group(
+    group_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupJoinResponse:
+    group = db.query(StudyGroup).filter(StudyGroup.id == group_id).first()
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="그룹을 찾을 수 없습니다",
+        )
+    if group.visibility != "public":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="공개 그룹만 바로 가입할 수 있습니다",
+        )
+
+    created = _add_group_member(db, group, current_user)
+    event = None
+    if created:
+        event = _add_group_notification_event(
+            db,
+            group.id,
+            "join",
+            current_user.id,
+            target_user_id=current_user.id,
+            message="그룹 참여",
+        )
+        try:
+            db.flush()
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            created = False
+    else:
+        db.commit()
+
+    if created and event is not None:
+        _queue_group_push_notifications(
+            background_tasks,
+            db,
+            group,
+            "join",
+            current_user,
+            target_user=current_user,
+            event_id=event.id,
+        )
+
+    return GroupJoinResponse(
+        message="그룹 참여 완료" if created else "이미 참여 중인 그룹입니다",
+        group=_group_response(db, group, current_user.id),
     )
 
 
@@ -1566,6 +1831,7 @@ def update_group_presence(
 def create_group_poke(
     group_id: int,
     payload: GroupPokeCreateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GroupPokeResponse:
@@ -1576,16 +1842,51 @@ def create_group_poke(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="자기 자신은 콕 찌를 수 없습니다",
         )
+    reaction_type = payload.reaction_type.strip().lower()
+    if reaction_type not in GROUP_REACTION_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="지원하지 않는 그룹 반응입니다",
+        )
+    group = db.query(StudyGroup).filter(StudyGroup.id == group_id).first()
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="그룹을 찾을 수 없습니다",
+        )
+    target_user = db.query(User).filter(User.id == target_member.user_id).first()
 
     poke = GroupPokeLog(
         group_id=group_id,
         sender_user_id=current_user.id,
         target_user_id=target_member.user_id,
+        reaction_type=reaction_type,
         message=payload.message.strip() if payload.message else None,
     )
     db.add(poke)
+    event = _add_group_notification_event(
+        db,
+        group_id,
+        "reaction",
+        current_user.id,
+        target_user_id=target_member.user_id,
+        reaction_type=reaction_type,
+        message=payload.message.strip() if payload.message else None,
+    )
+    db.flush()
     db.commit()
     db.refresh(poke)
+    if target_user is not None:
+        _queue_group_push_notifications(
+            background_tasks,
+            db,
+            group,
+            "reaction",
+            current_user,
+            target_user=target_user,
+            reaction_type=reaction_type,
+            event_id=event.id,
+        )
 
     return GroupPokeResponse(
         message="콕 찌르기 기록 완료",
@@ -1593,7 +1894,124 @@ def create_group_poke(
         group_id=group_id,
         sender_user_id=current_user.id,
         target_user_id=target_member.user_id,
+        reaction_type=poke.reaction_type,
         created_at=to_kst(poke.created_at),
+    )
+
+
+def _group_notification_rows(db: Session, user_id, limit: int | None = None):
+    sender = aliased(User)
+    target = aliased(User)
+    membership = aliased(GroupMember)
+    read_marker = aliased(GroupNotificationRead)
+    query = (
+        db.query(GroupNotificationEvent, StudyGroup, sender, target, read_marker.id)
+        .join(StudyGroup, StudyGroup.id == GroupNotificationEvent.group_id)
+        .join(membership, membership.group_id == StudyGroup.id)
+        .join(sender, sender.id == GroupNotificationEvent.actor_user_id)
+        .outerjoin(target, target.id == GroupNotificationEvent.target_user_id)
+        .outerjoin(
+            read_marker,
+            (read_marker.event_id == GroupNotificationEvent.id)
+            & (read_marker.user_id == user_id),
+        )
+        .filter(membership.user_id == user_id)
+        .order_by(GroupNotificationEvent.created_at.desc())
+    )
+    if limit is not None:
+        query = query.limit(limit)
+    return query.all()
+
+
+def _group_unread_notification_count(db: Session, user_id) -> int:
+    membership = aliased(GroupMember)
+    read_marker = aliased(GroupNotificationRead)
+    count = (
+        db.query(func.count(GroupNotificationEvent.id))
+        .join(StudyGroup, StudyGroup.id == GroupNotificationEvent.group_id)
+        .join(membership, membership.group_id == StudyGroup.id)
+        .outerjoin(
+            read_marker,
+            (read_marker.event_id == GroupNotificationEvent.id)
+            & (read_marker.user_id == user_id),
+        )
+        .filter(
+            membership.user_id == user_id,
+            GroupNotificationEvent.actor_user_id != user_id,
+            read_marker.id.is_(None),
+        )
+        .scalar()
+    )
+    return int(count or 0)
+
+
+@router.get("/groups/notifications", response_model=list[GroupNotificationResponse])
+def list_group_notifications(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[GroupNotificationResponse]:
+    safe_limit = min(max(limit, 1), 50)
+    rows = _group_notification_rows(db, current_user.id, safe_limit)
+
+    return [
+        GroupNotificationResponse(
+            id=event.id,
+            group_id=group.id,
+            group_name=group.name,
+            event_type=event.event_type,
+            sender_user_id=sender_user.id,
+            sender_nickname=sender_user.nickname,
+            target_user_id=target_user.id if target_user else None,
+            target_nickname=target_user.nickname if target_user else None,
+            reaction_type=event.reaction_type,
+            message=event.message,
+            is_read=read_id is not None,
+            created_at=to_kst(event.created_at),
+        )
+        for event, group, sender_user, target_user, read_id in rows
+    ]
+
+
+@router.get("/groups/notifications/unread-count", response_model=GroupNotificationUnreadCountResponse)
+def get_group_notification_unread_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupNotificationUnreadCountResponse:
+    unread_count = _group_unread_notification_count(db, current_user.id)
+    return GroupNotificationUnreadCountResponse(
+        unread_count=unread_count,
+        unreadCount=unread_count,
+    )
+
+
+@router.post("/groups/notifications/read", response_model=GroupNotificationMarkReadResponse)
+def mark_group_notifications_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupNotificationMarkReadResponse:
+    rows = _group_notification_rows(db, current_user.id)
+    marked_count = 0
+    for event, _group, _sender_user, _target_user, read_id in rows:
+        if read_id is not None:
+            continue
+        db.add(GroupNotificationRead(user_id=current_user.id, event_id=event.id))
+        marked_count += 1
+
+    if marked_count:
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+    else:
+        db.commit()
+
+    unread_count = _group_unread_notification_count(db, current_user.id)
+    return GroupNotificationMarkReadResponse(
+        message="그룹 알림 읽음 처리",
+        marked_count=marked_count,
+        unread_count=unread_count,
+        unreadCount=unread_count,
     )
 
 

@@ -42,6 +42,7 @@ class User(Base):
     rest_logs = relationship("StudySessionRest", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
     owned_groups = relationship("StudyGroup", back_populates="owner", cascade="all, delete-orphan")
+    group_notification_reads = relationship("GroupNotificationRead", back_populates="user", cascade="all, delete-orphan")
     pet = relationship("UserPet", back_populates="owner", uselist=False, cascade="all, delete-orphan")
     furniture_progress = relationship("UserFurniturePieceProgress", back_populates="owner", cascade="all, delete-orphan")
     furniture_placements = relationship("FurniturePlacement", back_populates="owner", cascade="all, delete-orphan")
@@ -172,6 +173,7 @@ class StudyGroup(Base):
     owner = relationship("User", back_populates="owned_groups", foreign_keys=[owner_user_id])
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     poke_logs = relationship("GroupPokeLog", back_populates="group", cascade="all, delete-orphan")
+    notification_events = relationship("GroupNotificationEvent", back_populates="group", cascade="all, delete-orphan")
 
 
 # 7. 그룹 멤버와 마지막 활동 상태
@@ -205,6 +207,7 @@ class GroupPokeLog(Base):
     group_id = Column(Integer, ForeignKey("study_groups.id", ondelete="CASCADE"), index=True, nullable=False)
     sender_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    reaction_type = Column(String, default="poke", nullable=False)
     message = Column(String, nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -212,6 +215,39 @@ class GroupPokeLog(Base):
     group = relationship("StudyGroup", back_populates="poke_logs")
     sender = relationship("User", foreign_keys=[sender_user_id])
     target = relationship("User", foreign_keys=[target_user_id])
+
+
+class GroupNotificationEvent(Base):
+    __tablename__ = "group_notification_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("study_groups.id", ondelete="CASCADE"), index=True, nullable=False)
+    event_type = Column(String, nullable=False)
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True)
+    reaction_type = Column(String, nullable=True)
+    message = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    group = relationship("StudyGroup", back_populates="notification_events")
+    actor = relationship("User", foreign_keys=[actor_user_id])
+    target = relationship("User", foreign_keys=[target_user_id])
+    reads = relationship("GroupNotificationRead", back_populates="event", cascade="all, delete-orphan")
+
+
+class GroupNotificationRead(Base):
+    __tablename__ = "group_notification_reads"
+    __table_args__ = (
+        UniqueConstraint("user_id", "event_id", name="uq_group_notification_reads_user_event"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    event_id = Column(Integer, ForeignKey("group_notification_events.id", ondelete="CASCADE"), index=True, nullable=False)
+    read_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="group_notification_reads")
+    event = relationship("GroupNotificationEvent", back_populates="reads")
 
 # 9. 인증 로그 테이블 (이미지의 study_session_id 연결 반영)
 class AuthLog(Base):
