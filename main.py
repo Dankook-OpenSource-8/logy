@@ -5,7 +5,6 @@ from fastapi.security import HTTPBearer
 
 from api.routes import router
 from core.model_preload import preload_ai_models
-from db.schema_migrations import ensure_group_social_schema
 
 app = FastAPI(title="Logy Backend")
 
@@ -26,7 +25,6 @@ app.include_router(router)
 
 @app.on_event("startup")
 def preload_models_on_startup() -> None:
-    ensure_group_social_schema()
     preload_ai_models()
 
 
