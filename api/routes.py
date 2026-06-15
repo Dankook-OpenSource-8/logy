@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, aliased, selectinload
 
 from core.ai_video_verification import RETAKE_THRESHOLD, verify_study_video
@@ -583,18 +583,29 @@ def _group_push_body(
     return f"{actor_nickname}님이 {group_name}에 {reaction_label} 보냈어요"
 
 
-def _group_push_tokens(db: Session, group_id: int, actor_user_id) -> list[str]:
-    rows = (
+def _group_push_tokens(
+    db: Session,
+    group_id: int,
+    actor_user_id,
+    recipient_user_ids: list | None = None,
+) -> list[str]:
+    query = (
         db.query(UserPushToken, UserNotificationSetting)
         .join(GroupMember, GroupMember.user_id == UserPushToken.user_id)
         .outerjoin(UserNotificationSetting, UserNotificationSetting.user_id == UserPushToken.user_id)
         .filter(
             GroupMember.group_id == group_id,
-            GroupMember.user_id != actor_user_id,
             UserPushToken.is_active.is_(True),
         )
-        .all()
     )
+    if recipient_user_ids is not None:
+        if not recipient_user_ids:
+            return []
+        query = query.filter(GroupMember.user_id.in_(recipient_user_ids))
+    else:
+        query = query.filter(GroupMember.user_id != actor_user_id)
+
+    rows = query.all()
 
     tokens: list[str] = []
     for push_token, setting in rows:
@@ -640,7 +651,11 @@ def _queue_group_push_notifications(
     reaction_type: str | None = None,
     event_id: int | None = None,
 ) -> None:
-    tokens = _group_push_tokens(db, group.id, actor_user.id)
+    recipient_user_ids = None
+    if event_type == "reaction":
+        recipient_user_ids = [target_user.id] if target_user is not None else []
+
+    tokens = _group_push_tokens(db, group.id, actor_user.id, recipient_user_ids)
     if not tokens:
         return
 
@@ -665,6 +680,19 @@ def _queue_group_push_notifications(
             "actorUserId": str(actor_user.id),
             "targetUserId": str(target_user.id) if target_user else None,
         },
+    )
+
+
+def _group_notification_recipient_filter(user_id):
+    return or_(
+        and_(
+            GroupNotificationEvent.event_type == "reaction",
+            GroupNotificationEvent.target_user_id == user_id,
+        ),
+        and_(
+            GroupNotificationEvent.event_type.in_(["join", "leave"]),
+            GroupNotificationEvent.actor_user_id != user_id,
+        ),
     )
 
 
@@ -1915,7 +1943,10 @@ def _group_notification_rows(db: Session, user_id, limit: int | None = None):
             (read_marker.event_id == GroupNotificationEvent.id)
             & (read_marker.user_id == user_id),
         )
-        .filter(membership.user_id == user_id)
+        .filter(
+            membership.user_id == user_id,
+            _group_notification_recipient_filter(user_id),
+        )
         .order_by(GroupNotificationEvent.created_at.desc())
     )
     if limit is not None:
@@ -1937,7 +1968,7 @@ def _group_unread_notification_count(db: Session, user_id) -> int:
         )
         .filter(
             membership.user_id == user_id,
-            GroupNotificationEvent.actor_user_id != user_id,
+            _group_notification_recipient_filter(user_id),
             read_marker.id.is_(None),
         )
         .scalar()
