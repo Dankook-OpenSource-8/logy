@@ -1,7 +1,7 @@
 import unittest
 from uuid import uuid4
 
-from api.routes import ONLINE_STATUSES, STUDY_STATUSES
+from api.routes import ONLINE_STATUSES, STUDY_STATUSES, _group_notification_recipient_filter
 from schemas.user import (
     GroupCreateRequest,
     GroupMembersResponse,
@@ -149,6 +149,14 @@ class GroupSocialSchemaTest(unittest.TestCase):
 
         self.assertEqual(unread.unreadCount, 3)
         self.assertEqual(marked.unreadCount, 0)
+
+    def test_group_notification_filter_limits_reactions_to_target(self):
+        user_id = uuid4()
+        compiled = str(_group_notification_recipient_filter(user_id))
+
+        self.assertIn("event_type", compiled)
+        self.assertIn("target_user_id", compiled)
+        self.assertIn("actor_user_id", compiled)
 
 
 if __name__ == "__main__":
