@@ -1,5 +1,6 @@
 import copy
 import os
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,7 @@ def main() -> None:
     from torch.utils.data import DataLoader, Dataset
     from transformers import CLIPModel, CLIPProcessor
 
+    random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
     train_samples = collect_samples(DATASET_DIR / "train")
     val_samples = collect_samples(DATASET_DIR / "val")
@@ -38,7 +40,7 @@ def main() -> None:
     for parameter in clip_model.parameters():
         parameter.requires_grad = False
 
-    train_dataset = StudyImageDataset(train_samples, processor)
+    train_dataset = StudyImageDataset(train_samples, processor, augment=True)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = None
     if val_samples:
@@ -110,9 +112,10 @@ def select_device(torch):
 
 
 class StudyImageDataset:
-    def __init__(self, samples: list[tuple[Path, int]], processor):
+    def __init__(self, samples: list[tuple[Path, int]], processor, augment: bool = False):
         self.samples = samples
         self.processor = processor
+        self.augment = augment
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -123,9 +126,44 @@ class StudyImageDataset:
 
         image_path, label = self.samples[index]
         image = Image.open(image_path).convert("RGB")
+        if self.augment:
+            image = apply_weak_augmentation(image)
         inputs = self.processor(images=image, return_tensors="pt")
         pixel_values = inputs["pixel_values"].squeeze(0)
         return pixel_values, torch.tensor(label, dtype=torch.long)
+
+
+def apply_weak_augmentation(image):
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+    image = ImageOps.exif_transpose(image)
+    width, height = image.size
+
+    if random.random() < 0.45:
+        brightness = random.uniform(0.9, 1.1)
+        image = ImageEnhance.Brightness(image).enhance(brightness)
+
+    if random.random() < 0.45:
+        contrast = random.uniform(0.9, 1.1)
+        image = ImageEnhance.Contrast(image).enhance(contrast)
+
+    if random.random() < 0.35:
+        angle = random.uniform(-5.0, 5.0)
+        image = image.rotate(angle, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
+
+    if random.random() < 0.35:
+        scale = random.uniform(0.92, 1.0)
+        crop_width = max(1, int(width * scale))
+        crop_height = max(1, int(height * scale))
+        left = random.randint(0, width - crop_width)
+        top = random.randint(0, height - crop_height)
+        image = image.crop((left, top, left + crop_width, top + crop_height))
+        image = image.resize((width, height), Image.Resampling.BICUBIC)
+
+    if random.random() < 0.1:
+        image = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.2, 0.5)))
+
+    return image
 
 
 def collect_samples(split_dir: Path) -> list[tuple[Path, int]]:

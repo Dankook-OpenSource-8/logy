@@ -7,7 +7,7 @@ from pathlib import Path
 DEFAULT_MODEL_PATH = "models/study_classifier.pt"
 MODEL_PATH = Path(os.getenv("STUDY_CLASSIFIER_MODEL_PATH", DEFAULT_MODEL_PATH))
 SCENE_SCORE_MAX = 60
-STUDY_PROBABILITY_THRESHOLD = 0.5
+STUDY_PROBABILITY_THRESHOLD = 0.44
 
 
 @dataclass(frozen=True)
