@@ -297,6 +297,9 @@ class UserPet(Base):
     pet_type = Column(String, default="cat", nullable=False)
     level = Column(Integer, default=1, nullable=False)
     total_exp = Column(Integer, default=0, nullable=False)
+    placed = Column(Boolean, default=True, nullable=False)
+    position_x = Column(Integer, default=0, nullable=False)
+    position_y = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -355,6 +358,9 @@ class UserFurniturePieceProgress(Base):
 # 14. 완성 가구 배치 정보
 class FurniturePlacement(Base):
     __tablename__ = "furniture_placements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "furniture_item_id", name="uq_furniture_placements_user_item"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
