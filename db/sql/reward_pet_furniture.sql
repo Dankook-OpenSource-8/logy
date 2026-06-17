@@ -1,6 +1,9 @@
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS last_attendance_date DATE;
 
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS major VARCHAR;
+
 CREATE TABLE IF NOT EXISTS user_pets (
     id SERIAL PRIMARY KEY,
     user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -10,6 +13,17 @@ CREATE TABLE IF NOT EXISTS user_pets (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE user_pets
+ADD COLUMN IF NOT EXISTS pet_type VARCHAR NOT NULL DEFAULT 'cat';
+
+UPDATE user_pets
+SET pet_type = 'cat'
+WHERE pet_type IS NULL OR pet_type NOT IN ('cat', 'dog');
+
+UPDATE user_pets
+SET level = 4
+WHERE level > 4;
 
 CREATE TABLE IF NOT EXISTS furniture_items (
     id SERIAL PRIMARY KEY,
@@ -78,4 +92,30 @@ CROSS JOIN (
         ('top', '책상 상판', 5)
 ) AS piece(code, name, sort_order)
 WHERE furniture_items.code = 'desk'
+ON CONFLICT (furniture_item_id, code) DO NOTHING;
+
+INSERT INTO furniture_items (code, name, total_piece_count)
+VALUES
+    ('sofa', '소파', 5),
+    ('chair', '의자', 5),
+    ('tv', '티비', 5),
+    ('lamp', '스탠드조명', 5),
+    ('fridge', '냉장고', 5),
+    ('bed', '침대', 5)
+ON CONFLICT (code) DO UPDATE
+SET name = EXCLUDED.name,
+    total_piece_count = EXCLUDED.total_piece_count;
+
+INSERT INTO furniture_pieces (furniture_item_id, code, name, sort_order)
+SELECT furniture_items.id, piece.code, furniture_items.name || ' 조각 ' || piece.sort_order, piece.sort_order
+FROM furniture_items
+CROSS JOIN (
+    VALUES
+        ('piece_1', 1),
+        ('piece_2', 2),
+        ('piece_3', 3),
+        ('piece_4', 4),
+        ('piece_5', 5)
+) AS piece(code, sort_order)
+WHERE furniture_items.code IN ('sofa', 'chair', 'tv', 'lamp', 'fridge', 'bed')
 ON CONFLICT (furniture_item_id, code) DO NOTHING;

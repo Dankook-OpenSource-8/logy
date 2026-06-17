@@ -3,11 +3,10 @@ from datetime import date, timedelta
 
 
 PET_EVOLUTION_STAGES = [
-    {"level": 1, "name": "알/새싹", "requiredExp": 0},
-    {"level": 2, "name": "아기 펫", "requiredExp": 20},
-    {"level": 3, "name": "학생 펫", "requiredExp": 80},
-    {"level": 4, "name": "전공 펫", "requiredExp": 200},
-    {"level": 5, "name": "마스터 펫", "requiredExp": 400},
+    {"level": 1, "name": "알/작은 새싹 펫", "requiredExp": 0},
+    {"level": 2, "name": "책가방 멘 아기 펫", "requiredExp": 20},
+    {"level": 3, "name": "안경/연필/책 아이템", "requiredExp": 80},
+    {"level": 4, "name": "전공별 장비 착용", "requiredExp": 200},
 ]
 
 
@@ -34,6 +33,8 @@ def pet_stage_name(level: int) -> str:
     for stage in PET_EVOLUTION_STAGES:
         if stage["level"] == level:
             return stage["name"]
+    if level > PET_EVOLUTION_STAGES[-1]["level"]:
+        return PET_EVOLUTION_STAGES[-1]["name"]
     return PET_EVOLUTION_STAGES[0]["name"]
 
 

@@ -20,6 +20,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     real_name = Column(String, nullable=False)
     nickname = Column(String, unique=True, index=True, nullable=False)
+    major = Column(String, nullable=True)
 
     password = Column(String, nullable=False)  # 비밀번호
 
@@ -293,6 +294,7 @@ class UserPet(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
     name = Column(String, default="Logy", nullable=False)
+    pet_type = Column(String, default="cat", nullable=False)
     level = Column(Integer, default=1, nullable=False)
     total_exp = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

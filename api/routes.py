@@ -115,6 +115,8 @@ GROUP_REACTION_TYPES = {"poke", "heart", "fighting", "smile", "clap", "fire"}
 REST_DAILY_MAX_COUNT = 2
 REST_DAILY_MAX_SECONDS = 15 * 60
 DEFAULT_FURNITURE_CODE = "desk"
+ALLOWED_USER_MAJORS = {"engineering", "design", "medical", "business", "humanities"}
+ALLOWED_PET_TYPES = {"cat", "dog"}
 DEFAULT_FURNITURE_PIECES = [
     ("leg_1", "책상 다리 1", 1),
     ("leg_2", "책상 다리 2", 2),
@@ -883,11 +885,18 @@ def _get_or_create_user_pet(db: Session, user: User) -> UserPet:
 
 def _pet_response(pet: UserPet) -> dict:
     next_stage = next_pet_stage(pet.total_exp)
+    pet_type = pet.pet_type if pet.pet_type in ALLOWED_PET_TYPES else "cat"
+    display_level = min(max(pet.level, 1), PET_EVOLUTION_STAGES[-1]["level"])
+    is_egg = display_level <= 1
+    appearance_type = f"{pet_type}_egg" if is_egg else pet_type
     return {
         "petId": pet.id,
         "name": pet.name,
-        "level": pet.level,
-        "stageName": pet_stage_name(pet.level),
+        "petType": pet_type,
+        "appearanceType": appearance_type,
+        "isEgg": is_egg,
+        "level": display_level,
+        "stageName": pet_stage_name(display_level),
         "totalExp": pet.total_exp,
         "nextLevel": next_stage,
         "expToNextLevel": max((next_stage or {}).get("requiredExp", pet.total_exp) - pet.total_exp, 0),
@@ -1238,6 +1247,8 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)) -> User:
     real_name = _normalize(payload.real_name)
     nickname = _normalize(payload.nickname)
     password = payload.password.strip()
+    major = _normalize(payload.major) if payload.major else None
+    pet_type = _normalize(payload.pet_type).lower() if payload.pet_type else "cat"
 
     if not real_name:
         raise HTTPException(
@@ -1254,6 +1265,16 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)) -> User:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="비밀번호는 4자 이상 입력해주세요",
         )
+    if major is not None and major not in ALLOWED_USER_MAJORS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="전공 계열 값이 올바르지 않습니다",
+        )
+    if pet_type not in ALLOWED_PET_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="펫 선택 값이 올바르지 않습니다",
+        )
 
     if _nickname_exists(db, nickname):
         raise HTTPException(
@@ -1264,11 +1285,14 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)) -> User:
     user = User(
         real_name=real_name,
         nickname=nickname,
+        major=major,
         password=hash_password(password),
     )
     db.add(user)
 
     try:
+        db.flush()
+        db.add(UserPet(user_id=user.id, pet_type=pet_type))
         db.commit()
     except IntegrityError as error:
         db.rollback()
