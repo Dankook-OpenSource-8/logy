@@ -18,6 +18,12 @@ class UserSignupRequest(KSTBaseModel):
     real_name: str = Field(..., min_length=1, max_length=100)
     nickname: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=4, max_length=128)
+    major: str | None = Field(default=None, max_length=50)
+    pet_type: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("pet_type", "petType"),
+        max_length=20,
+    )
 
 
 class UserLoginRequest(KSTBaseModel):
@@ -31,6 +37,7 @@ class UserResponse(KSTBaseModel):
     id: UUID
     real_name: str
     nickname: str
+    major: str | None = None
     total_study_time: int
     streak_days: int
     created_at: datetime
@@ -243,6 +250,9 @@ class PetStageResponse(KSTBaseModel):
 class UserPetResponse(KSTBaseModel):
     petId: int
     name: str
+    petType: str
+    appearanceType: str
+    isEgg: bool
     level: int
     stageName: str
     totalExp: int

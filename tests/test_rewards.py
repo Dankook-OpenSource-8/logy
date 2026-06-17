@@ -26,7 +26,7 @@ class RewardFormulaTest(unittest.TestCase):
         self.assertEqual(pet_level_from_exp(20), 2)
         self.assertEqual(pet_level_from_exp(80), 3)
         self.assertEqual(pet_level_from_exp(200), 4)
-        self.assertEqual(pet_level_from_exp(400), 5)
+        self.assertEqual(pet_level_from_exp(400), 4)
 
     def test_pet_level_stays_at_previous_stage_before_threshold(self):
         self.assertEqual(pet_level_from_exp(19), 1)
@@ -35,12 +35,13 @@ class RewardFormulaTest(unittest.TestCase):
         self.assertEqual(pet_level_from_exp(399), 4)
 
     def test_pet_stage_name_matches_level(self):
-        self.assertEqual(pet_stage_name(1), "알/새싹")
-        self.assertEqual(pet_stage_name(5), "마스터 펫")
+        self.assertEqual(pet_stage_name(1), "알/작은 새싹 펫")
+        self.assertEqual(pet_stage_name(4), "전공별 장비 착용")
+        self.assertEqual(pet_stage_name(5), "전공별 장비 착용")
 
     def test_next_pet_stage_returns_none_at_max_level(self):
         self.assertEqual(next_pet_stage(0)["level"], 2)
-        self.assertIsNone(next_pet_stage(400))
+        self.assertIsNone(next_pet_stage(200))
 
     def test_first_attendance_gives_base_bonus(self):
         reward = attendance_reward(None, 0, date(2026, 5, 29))
