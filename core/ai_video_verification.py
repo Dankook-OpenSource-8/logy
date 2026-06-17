@@ -1523,21 +1523,31 @@ def select_best_verification_frame(
     for frame_path in frame_paths:
         quality_score = score_frame_quality(frame_path)
         extracted_text = extract_text(frame_path)
+        classifier_started_at = time.perf_counter()
         classifier_result = score_with_study_classifier(frame_path)
+        _perf_log(
+            "study_classifier",
+            classifier_started_at,
+            available=classifier_result.available,
+        )
         if classifier_result.available:
             scene_score = classifier_result.scene_score
             forbidden_penalty = 0
             scene_reason = ""
             classifier_reason = classifier_result.reason
         else:
+            scene_started_at = time.perf_counter()
             scene_score, forbidden_penalty, scene_reason = score_scene_context(frame_path, subject)
+            _perf_log("scene_context", scene_started_at)
             classifier_reason = (
                 classifier_result.reason
                 if classifier_result.reason != "fine_tuned_classifier=not_ready"
                 else ""
             )
 
+        text_started_at = time.perf_counter()
         text_score, text_reason = score_subject_similarity(subject, extracted_text)
+        _perf_log("subject_similarity", text_started_at, text_score=text_score)
         total_score = max(
             0,
             min(100, scene_score + text_score),
@@ -1832,11 +1842,14 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
 
 def calculate_text_similarity(subject: str, extracted_text: str) -> float | None:
     try:
+        started_at = time.perf_counter()
         model = get_embedding_model()
         chunks = chunk_text(extracted_text)
         embeddings = model.encode([subject, *chunks], normalize_embeddings=True)
         subject_embedding = embeddings[0]
-        return max(float(subject_embedding @ chunk_embedding) for chunk_embedding in embeddings[1:])
+        similarity = max(float(subject_embedding @ chunk_embedding) for chunk_embedding in embeddings[1:])
+        _perf_log("embedding_similarity", started_at, chunk_count=len(chunks))
+        return similarity
     except Exception:
         return None
 
@@ -2112,8 +2125,10 @@ def has_ocr_timeout(text_reason: str) -> bool:
 
 
 def save_representative_frame(frame_path: Path) -> str:
+    started_at = time.perf_counter()
     output_dir = Path(tempfile.gettempdir()) / "logy_ai_frames"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{uuid.uuid4().hex}.jpg"
     shutil.copy2(frame_path, output_path)
+    _perf_log("save_representative_frame", started_at)
     return str(output_path)
