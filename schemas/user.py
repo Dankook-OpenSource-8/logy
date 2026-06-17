@@ -511,6 +511,28 @@ class GroupMemberStatusUpdateRequest(KSTBaseModel):
     active_study_session_id: int | None = Field(default=None, ge=1)
 
 
+class GroupPetPlacementRequest(KSTBaseModel):
+    position_x: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_x", "positionX"),
+        ge=-10000,
+        le=10000,
+    )
+    position_y: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_y", "positionY"),
+        ge=-10000,
+        le=10000,
+    )
+
+
+class GroupPetPlacementResponse(KSTBaseModel):
+    groupId: int
+    userId: UUID
+    positionX: int
+    positionY: int
+
+
 class GroupMemberResponse(KSTBaseModel):
     user_id: UUID
     nickname: str
@@ -518,6 +540,8 @@ class GroupMemberResponse(KSTBaseModel):
     online_status: str
     study_status: str
     active_study_session_id: int | None
+    positionX: int
+    positionY: int
     last_seen_at: datetime | None
     total_study_seconds: int
     today_study_seconds: int

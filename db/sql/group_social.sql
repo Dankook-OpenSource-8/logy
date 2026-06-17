@@ -43,6 +43,12 @@ CREATE INDEX IF NOT EXISTS ix_group_members_group_id
 CREATE INDEX IF NOT EXISTS ix_group_members_user_id
     ON group_members(user_id);
 
+ALTER TABLE group_members
+    ADD COLUMN IF NOT EXISTS farm_pet_position_x INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE group_members
+    ADD COLUMN IF NOT EXISTS farm_pet_position_y INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS group_poke_logs (
     id SERIAL PRIMARY KEY,
     group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,

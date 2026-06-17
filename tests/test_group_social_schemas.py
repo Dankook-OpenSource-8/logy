@@ -9,6 +9,7 @@ from schemas.user import (
     GroupJoinRequest,
     GroupMemberResponse,
     GroupMemberStatusUpdateRequest,
+    GroupPetPlacementRequest,
     GroupNotificationMarkReadResponse,
     GroupNotificationResponse,
     GroupNotificationUnreadCountResponse,
@@ -57,6 +58,8 @@ class GroupSocialSchemaTest(unittest.TestCase):
             online_status="online",
             study_status="idle",
             active_study_session_id=None,
+            positionX=80,
+            positionY=340,
             last_seen_at="2026-06-05T12:00:00Z",
             total_study_seconds=7200,
             today_study_seconds=1800,
@@ -71,6 +74,8 @@ class GroupSocialSchemaTest(unittest.TestCase):
 
         self.assertEqual(payload.group_today_study_seconds, 1800)
         self.assertEqual(payload.members[0].today_study_seconds, 1800)
+        self.assertEqual(payload.members[0].positionX, 80)
+        self.assertEqual(payload.members[0].positionY, 340)
 
     def test_group_join_request_accepts_invite_code(self):
         payload = GroupJoinRequest(invite_code="ABCD1234")
@@ -83,6 +88,17 @@ class GroupSocialSchemaTest(unittest.TestCase):
         self.assertEqual(payload.online_status, "online")
         self.assertEqual(payload.study_status, "idle")
         self.assertIsNone(payload.active_study_session_id)
+
+    def test_group_pet_placement_accepts_frontend_pixel_coordinates(self):
+        payload = GroupPetPlacementRequest.model_validate(
+            {
+                "positionX": 210,
+                "positionY": 360,
+            }
+        )
+
+        self.assertEqual(payload.position_x, 210)
+        self.assertEqual(payload.position_y, 360)
 
     def test_group_poke_request_accepts_target_user(self):
         target_user_id = uuid4()
