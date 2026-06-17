@@ -191,6 +191,8 @@ class GroupMember(Base):
     online_status = Column(String, default="offline", nullable=False)
     study_status = Column(String, default="idle", nullable=False)
     active_study_session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="SET NULL"), nullable=True)
+    farm_pet_position_x = Column(Integer, default=0, nullable=False)
+    farm_pet_position_y = Column(Integer, default=0, nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     joined_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

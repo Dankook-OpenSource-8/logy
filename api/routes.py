@@ -69,6 +69,8 @@ from schemas import (
     GroupMembersResponse,
     GroupMemberResponse,
     GroupMemberStatusUpdateRequest,
+    GroupPetPlacementRequest,
+    GroupPetPlacementResponse,
     GroupNotificationMarkReadResponse,
     GroupNotificationResponse,
     GroupNotificationUnreadCountResponse,
@@ -1837,6 +1839,8 @@ def get_group_members(
                 online_status=member.online_status,
                 study_status=member.study_status,
                 active_study_session_id=member.active_study_session_id,
+                positionX=member.farm_pet_position_x,
+                positionY=member.farm_pet_position_y,
                 last_seen_at=to_kst(member.last_seen_at),
                 total_study_seconds=_user_total_study_seconds(db, user.id),
                 today_study_seconds=_user_today_study_seconds(db, user.id),
@@ -1898,9 +1902,33 @@ def update_group_presence(
         online_status=member.online_status,
         study_status=member.study_status,
         active_study_session_id=member.active_study_session_id,
+        positionX=member.farm_pet_position_x,
+        positionY=member.farm_pet_position_y,
         last_seen_at=to_kst(member.last_seen_at),
         total_study_seconds=_user_total_study_seconds(db, current_user.id),
         today_study_seconds=_user_today_study_seconds(db, current_user.id),
+    )
+
+
+@router.put("/groups/{group_id}/pet-placement", response_model=GroupPetPlacementResponse)
+def update_group_pet_placement(
+    group_id: int,
+    payload: GroupPetPlacementRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GroupPetPlacementResponse:
+    member = _get_group_member_or_404(db, group_id, current_user.id)
+    member.farm_pet_position_x = payload.position_x
+    member.farm_pet_position_y = payload.position_y
+    member.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(member)
+
+    return GroupPetPlacementResponse(
+        groupId=group_id,
+        userId=current_user.id,
+        positionX=member.farm_pet_position_x,
+        positionY=member.farm_pet_position_y,
     )
 
 
