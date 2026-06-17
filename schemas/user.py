@@ -256,6 +256,9 @@ class UserPetResponse(KSTBaseModel):
     level: int
     stageName: str
     totalExp: int
+    placed: bool
+    positionX: int
+    positionY: int
     nextLevel: PetStageResponse | None
     expToNextLevel: int
     stages: list[PetStageResponse]
@@ -280,10 +283,24 @@ class FurnitureItemProgressResponse(KSTBaseModel):
 
 
 class FurniturePlacementRequest(KSTBaseModel):
-    furniture_item_id: int = Field(..., ge=1)
+    furniture_item_id: int = Field(
+        ...,
+        validation_alias=AliasChoices("furniture_item_id", "furnitureItemId"),
+        ge=1,
+    )
     placed: bool = True
-    position_x: int = Field(default=0, ge=0, le=100)
-    position_y: int = Field(default=0, ge=0, le=100)
+    position_x: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_x", "positionX"),
+        ge=-10000,
+        le=10000,
+    )
+    position_y: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_y", "positionY"),
+        ge=-10000,
+        le=10000,
+    )
 
 
 class FurniturePlacementResponse(KSTBaseModel):
@@ -291,6 +308,29 @@ class FurniturePlacementResponse(KSTBaseModel):
     furnitureItemId: int
     furnitureCode: str
     furnitureName: str
+    placed: bool
+    positionX: int
+    positionY: int
+
+
+class PetPlacementRequest(KSTBaseModel):
+    placed: bool = True
+    position_x: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_x", "positionX"),
+        ge=-10000,
+        le=10000,
+    )
+    position_y: int = Field(
+        default=0,
+        validation_alias=AliasChoices("position_y", "positionY"),
+        ge=-10000,
+        le=10000,
+    )
+
+
+class PetPlacementResponse(KSTBaseModel):
+    petId: int
     placed: bool
     positionX: int
     positionY: int

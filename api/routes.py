@@ -80,6 +80,8 @@ from schemas import (
     NicknameCheckResponse,
     NotificationSettingsResponse,
     NotificationSettingsUpdateRequest,
+    PetPlacementRequest,
+    PetPlacementResponse,
     PushTokenRegisterRequest,
     PushTokenRegisterResponse,
     FurniturePlacementRequest,
@@ -898,6 +900,9 @@ def _pet_response(pet: UserPet) -> dict:
         "level": display_level,
         "stageName": pet_stage_name(display_level),
         "totalExp": pet.total_exp,
+        "placed": pet.placed,
+        "positionX": pet.position_x,
+        "positionY": pet.position_y,
         "nextLevel": next_stage,
         "expToNextLevel": max((next_stage or {}).get("requiredExp", pet.total_exp) - pet.total_exp, 0),
         "stages": PET_EVOLUTION_STAGES,
@@ -1575,6 +1580,26 @@ def upsert_furniture_placement(
     db.commit()
     db.refresh(placement)
     return _placement_response(placement)
+
+
+@router.post("/pets/placement", response_model=PetPlacementResponse)
+def upsert_pet_placement(
+    payload: PetPlacementRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    pet = _get_or_create_user_pet(db, current_user)
+    pet.placed = payload.placed
+    pet.position_x = payload.position_x
+    pet.position_y = payload.position_y
+    db.commit()
+    db.refresh(pet)
+    return {
+        "petId": pet.id,
+        "placed": pet.placed,
+        "positionX": pet.position_x,
+        "positionY": pet.position_y,
+    }
 
 
 @router.post("/groups", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)

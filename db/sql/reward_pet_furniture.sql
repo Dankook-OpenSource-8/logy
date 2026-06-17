@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS user_pets (
 ALTER TABLE user_pets
 ADD COLUMN IF NOT EXISTS pet_type VARCHAR NOT NULL DEFAULT 'cat';
 
+ALTER TABLE user_pets
+ADD COLUMN IF NOT EXISTS placed BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE user_pets
+ADD COLUMN IF NOT EXISTS position_x INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE user_pets
+ADD COLUMN IF NOT EXISTS position_y INTEGER NOT NULL DEFAULT 0;
+
 UPDATE user_pets
 SET pet_type = 'cat'
 WHERE pet_type IS NULL OR pet_type NOT IN ('cat', 'dog');
@@ -62,6 +71,23 @@ CREATE TABLE IF NOT EXISTS furniture_placements (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+WITH duplicate_placements AS (
+    SELECT
+        id,
+        ROW_NUMBER() OVER (
+            PARTITION BY user_id, furniture_item_id
+            ORDER BY updated_at DESC, id DESC
+        ) AS placement_rank
+    FROM furniture_placements
+)
+DELETE FROM furniture_placements
+USING duplicate_placements
+WHERE furniture_placements.id = duplicate_placements.id
+  AND duplicate_placements.placement_rank > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_furniture_placements_user_item
+ON furniture_placements (user_id, furniture_item_id);
 
 CREATE TABLE IF NOT EXISTS reward_ledgers (
     id SERIAL PRIMARY KEY,
