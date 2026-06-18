@@ -276,7 +276,11 @@ class AiVideoVerificationTest(unittest.TestCase):
             ("전기회로", "Kirchhoff node mesh impedance phasor voltage current 회로 해석"),
             ("간호학", "patient assessment intervention vital signs medication 감염 간호"),
             ("법학", "contract tort constitution criminal civil procedure rights 판례"),
+            ("지식재산", "권리의 매각 및 라이선싱 전략, 특허권과 저작권의 양도, 로열티 계약"),
             ("데이터사이언스", "dataframe visualization regression classification clustering preprocessing"),
+            ("미술치료", "art therapy client emotion expression drawing assessment intervention counseling"),
+            ("교육학개론", "curriculum instruction assessment classroom teacher student learning development"),
+            ("생명과학개론", "biology cell dna gene protein evolution ecology organism metabolism"),
         ]
         for subject, text in cases:
             with self.subTest(subject=subject):
