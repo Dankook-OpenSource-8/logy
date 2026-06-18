@@ -21,6 +21,8 @@ from core.rewards import (
     attendance_reward,
     furniture_progress_from_auth_minutes,
     next_pet_stage,
+    pet_current_level_exp,
+    pet_current_level_required_exp,
     pet_exp_from_verified_seconds,
     pet_level_from_exp,
     pet_stage_name,
@@ -893,6 +895,13 @@ def _pet_response(pet: UserPet) -> dict:
     display_level = min(max(pet.level, 1), PET_EVOLUTION_STAGES[-1]["level"])
     is_egg = display_level <= 1
     appearance_type = f"{pet_type}_egg" if is_egg else pet_type
+    current_level_exp = pet_current_level_exp(pet.total_exp)
+    current_level_required_exp = pet_current_level_required_exp(pet.total_exp)
+    current_level_progress_percent = (
+        min(round(current_level_exp / current_level_required_exp * 100), 100)
+        if current_level_required_exp > 0
+        else 100
+    )
     return {
         "petId": pet.id,
         "name": pet.name,
@@ -902,11 +911,14 @@ def _pet_response(pet: UserPet) -> dict:
         "level": display_level,
         "stageName": pet_stage_name(display_level),
         "totalExp": pet.total_exp,
+        "currentLevelExp": current_level_exp,
+        "currentLevelRequiredExp": current_level_required_exp,
+        "currentLevelProgressPercent": current_level_progress_percent,
         "placed": pet.placed,
         "positionX": pet.position_x,
         "positionY": pet.position_y,
         "nextLevel": next_stage,
-        "expToNextLevel": max((next_stage or {}).get("requiredExp", pet.total_exp) - pet.total_exp, 0),
+        "expToNextLevel": max((next_stage or {}).get("totalRequiredExp", pet.total_exp) - pet.total_exp, 0),
         "stages": PET_EVOLUTION_STAGES,
     }
 
