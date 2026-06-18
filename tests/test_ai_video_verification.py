@@ -148,7 +148,33 @@ class AiVideoVerificationTest(unittest.TestCase):
                 result = select_best_verification_frame([frame_path], "오픈소스")
 
         self.assertEqual(result.forbidden_penalty, 30)
-        self.assertEqual(result.total_score, 72)
+        self.assertEqual(result.total_score, 60)
+
+    def test_strong_ocr_evidence_boosts_text_score_only_to_text_score_max(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+
+            with (
+                patch("core.ai_video_verification.score_frame_quality", return_value=10),
+                patch("core.ai_video_verification.extract_text", return_value="computer architecture memory"),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(36, "subject evidence")),
+                patch(
+                    "core.ai_video_verification.score_with_study_classifier",
+                    return_value=StudyClassifierResult(
+                        available=True,
+                        study_probability=0.2,
+                        scene_score=0,
+                        forbidden_penalty=0,
+                        reason="fine_tuned_study_probability=0.20",
+                    ),
+                ),
+            ):
+                result = select_best_verification_frame([frame_path], "컴퓨터구조")
+
+        self.assertEqual(result.text_score, 40)
+        self.assertEqual(result.total_score, 40)
+        self.assertIn("strong_text_evidence_boost=40", result.text_reason)
 
     def test_first_passing_frame_stops_scoring(self):
         with tempfile.TemporaryDirectory() as temp_dir:
