@@ -339,6 +339,7 @@ class AiVideoVerificationTest(unittest.TestCase):
             ("미술치료", "art therapy client emotion expression drawing assessment intervention counseling"),
             ("교육학개론", "curriculum instruction assessment classroom teacher student learning development"),
             ("생명과학개론", "biology cell dna gene protein evolution ecology organism metabolism"),
+            ("생명공학개론", "protein amino acid peptide collagen glycosylation posttranslational modification hydroxyproline"),
         ]
         for subject, text in cases:
             with self.subTest(subject=subject):
@@ -365,6 +366,26 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         self.assertIn("thermodynamics", expanded)
         self.assertIn("entropy", expanded)
+
+    def test_related_subject_family_keywords_help_unregistered_subject_names(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.08):
+            score, reason = score_subject_similarity(
+                "생명공학 개론",
+                "단백질 아미노산 collagen posttranslational glycosylation hydroxylysine 내용을 정리했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
+
+    def test_education_family_keywords_help_related_subject_names(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.08):
+            score, reason = score_subject_similarity(
+                "교육상담",
+                "상담 장면에서 내담자의 정서와 학습 동기, 평가, 교수 방법을 분석했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
 
     def test_video_verification_approves_from_65_points(self):
         with tempfile.TemporaryDirectory() as temp_dir:

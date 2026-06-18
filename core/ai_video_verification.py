@@ -1518,6 +1518,8 @@ SUBJECT_ALIASES.update(
         "분자생물학": "molecular biology dna rna replication transcription translation protein gene expression",
         "유전학": "genetics gene chromosome inheritance allele mutation genotype phenotype mendel",
         "생화학": "biochemistry enzyme protein carbohydrate lipid metabolism glycolysis krebs atp",
+        "생명공학": "biotechnology biology cell dna gene protein amino acid peptide collagen enzyme fermentation genetic engineering molecular biology biochemistry",
+        "생명공학개론": "introduction to biotechnology biology cell dna gene protein amino acid peptide collagen enzyme fermentation genetic engineering molecular biology biochemistry",
         "세포생물학": "cell biology membrane organelle nucleus mitochondria cell cycle cytoskeleton signaling",
         "동물생리학": "animal physiology nervous endocrine circulation respiration digestion excretion homeostasis",
         "식물생리학": "plant physiology photosynthesis transpiration hormone xylem phloem stomata growth",
@@ -1671,6 +1673,8 @@ SUBJECT_CORE_KEYWORDS.update(
         "간호연구": {"nursing research", "evidence", "hypothesis", "sample", "statistics", "validity", "간호연구", "근거", "가설", "표본", "타당도"},
         "역학": {"epidemiology", "prevalence", "incidence", "cohort", "odds ratio", "relative risk", "역학", "유병률", "발생률", "코호트"},
         "면역학": {"immunology", "antigen", "antibody", "immune", "t cell", "b cell", "면역", "항원", "항체", "백신"},
+        "생명공학": {"biotechnology", "biology", "cell", "dna", "gene", "protein", "amino acid", "peptide", "collagen", "enzyme", "fermentation", "molecular biology", "biochemistry", "glycosylation", "posttranslational", "hydroxyproline", "hydroxylysine", "생명공학", "생명", "세포", "유전자", "단백질", "아미노산", "펩타이드", "콜라겐", "효소", "발효", "분자생물학", "생화학", "당화", "번역후", "수산화", "하이드록시프롤린", "하이드록시라이신"},
+        "생명공학개론": {"biotechnology", "biology", "cell", "dna", "gene", "protein", "amino acid", "peptide", "collagen", "enzyme", "fermentation", "molecular biology", "biochemistry", "glycosylation", "posttranslational", "hydroxyproline", "hydroxylysine", "생명공학", "생명", "세포", "유전자", "단백질", "아미노산", "펩타이드", "콜라겐", "효소", "발효", "분자생물학", "생화학", "당화", "번역후", "수산화", "하이드록시프롤린", "하이드록시라이신"},
         "영어": {"english", "grammar", "vocabulary", "reading", "listening", "speaking", "writing", "영어", "문법", "어휘", "독해", "작문"},
         "한국사": {"joseon", "goryeo", "silla", "independence movement", "colonial", "dynasty", "조선", "고려", "신라", "독립운동", "일제"},
         "세계사": {"civilization", "empire", "revolution", "war", "nationalism", "imperialism", "문명", "제국", "혁명", "전쟁", "제국주의"},
@@ -1703,6 +1707,66 @@ SUBJECT_CORE_KEYWORDS.update(
         "계량경제학": {"econometrics", "regression", "time series", "panel data", "estimator", "계량경제", "회귀", "시계열", "패널"},
     }
 )
+
+SUBJECT_FAMILY_SUBJECTS = {
+    "생명": (
+        "생명공학",
+        "생명공학개론",
+        "생명과학",
+        "생명과학개론",
+        "생명학개론",
+        "일반생물학",
+        "분자생물학",
+        "생화학",
+        "세포생물학",
+        "유전학",
+    ),
+    "생물": (
+        "생명과학",
+        "일반생물학",
+        "분자생물학",
+        "생화학",
+        "세포생물학",
+        "유전학",
+        "미생물학",
+    ),
+    "물리치료": ("물리치료학",),
+    "물리": ("물리", "일반물리학"),
+    "교육": (
+        "교육학",
+        "교육학개론",
+        "교육심리",
+        "교육행정",
+        "특수교육",
+        "보건교육",
+        "한국어교육",
+    ),
+    "상담": ("상담심리", "청소년상담", "가족상담", "미술치료", "심리학"),
+    "심리": ("심리학", "상담심리", "교육심리"),
+    "법": ("법학", "헌법", "민법", "형법", "상법", "회사법", "노동법", "지식재산"),
+    "지식재산": ("지식재산", "지식재산권", "지적재산권"),
+    "회계": ("회계", "재무회계", "관리회계"),
+    "경제": ("경제", "미시경제", "거시경제", "계량경제학"),
+    "경영": ("경영", "마케팅", "재무관리", "생산운영관리", "조직행동론"),
+    "통계": ("통계", "기초통계학", "통계학개론", "보건통계", "실험통계"),
+    "컴퓨터": (
+        "컴퓨터공학개론",
+        "프로그래밍",
+        "자료구조",
+        "알고리즘",
+        "데이터베이스",
+        "운영체제",
+        "컴퓨터네트워크",
+    ),
+    "프로그래밍": (
+        "프로그래밍",
+        "프로그래밍기초",
+        "자바프로그래밍",
+        "파이썬프로그래밍",
+        "C프로그래밍",
+        "객체지향프로그래밍",
+    ),
+}
 
 ACADEMIC_TEXT_HINTS.update(
     {
@@ -2319,9 +2383,12 @@ def tokenize_text(value: str) -> set[str]:
 
 
 def expand_subject(subject: str) -> str:
-    alias = SUBJECT_ALIASES.get(subject.replace(" ", ""), "") or SUBJECT_ALIASES.get(subject, "")
+    alias = SUBJECT_ALIASES.get(normalize_subject_key(subject), "") or SUBJECT_ALIASES.get(subject, "")
+    related_aliases = related_subject_aliases(subject)
     if alias:
-        return f"{subject} {alias}".strip()
+        return f"{subject} {alias} {related_aliases}".strip()
+    if related_aliases:
+        return f"{subject} {related_aliases}".strip()
 
     generic_context = (
         "lecture textbook notes workbook problem solving equation diagram concept "
@@ -2342,7 +2409,7 @@ def chunk_text(value: str, chunk_size: int = 320) -> list[str]:
 
 
 def score_subject_keyword_match(subject: str, extracted_text: str) -> tuple[int, str]:
-    normalized_subject = subject.replace(" ", "").lower()
+    normalized_subject = normalize_subject_key(subject).lower()
     normalized_text = normalize_text_for_match(extracted_text)
     if normalized_subject and normalized_subject.lower() in normalized_text:
         return TEXT_SCORE_MAX, "subject_direct_match"
@@ -2364,12 +2431,53 @@ def score_subject_keyword_match(subject: str, extracted_text: str) -> tuple[int,
 
 
 def subject_core_keywords(subject: str) -> set[str]:
-    compact_subject = subject.replace(" ", "")
-    return (
+    compact_subject = normalize_subject_key(subject)
+    keywords = set(
         SUBJECT_CORE_KEYWORDS.get(compact_subject)
         or SUBJECT_CORE_KEYWORDS.get(subject)
         or set()
     )
+    for related_subject in related_subject_names(subject):
+        keywords.update(SUBJECT_CORE_KEYWORDS.get(related_subject, set()))
+    return keywords
+
+
+def normalize_subject_key(subject: str) -> str:
+    return "".join(char for char in subject if char.isalnum())
+
+
+def related_subject_names(subject: str) -> tuple[str, ...]:
+    compact_subject = normalize_subject_key(subject)
+    if not compact_subject:
+        return ()
+
+    related: list[str] = []
+    for trigger, subject_names in SUBJECT_FAMILY_SUBJECTS.items():
+        if trigger == "물리" and "물리치료" in compact_subject:
+            continue
+        if trigger in compact_subject:
+            related.extend(subject_names)
+
+    exact_key = SUBJECT_ALIASES.get(compact_subject) or SUBJECT_CORE_KEYWORDS.get(compact_subject)
+    if exact_key:
+        related = [name for name in related if name != compact_subject]
+
+    deduped = []
+    seen = set()
+    for name in related:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+    return tuple(deduped)
+
+
+def related_subject_aliases(subject: str) -> str:
+    aliases = [
+        SUBJECT_ALIASES[name]
+        for name in related_subject_names(subject)
+        if name in SUBJECT_ALIASES
+    ]
+    return " ".join(aliases)
 
 
 def matched_keywords(keywords: set[str], extracted_text: str) -> set[str]:

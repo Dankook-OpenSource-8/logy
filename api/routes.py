@@ -534,6 +534,18 @@ def _auth_success_count_for_session(db: Session, study_session_id: int) -> int:
     return int(total or 0)
 
 
+def _auth_non_success_count_for_session(db: Session, study_session_id: int) -> int:
+    total = (
+        db.query(func.count(AuthLog.id))
+        .filter(
+            AuthLog.study_session_id == study_session_id,
+            AuthLog.status != "성공",
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
 def _session_elapsed_seconds(study_session: StudySession, ended_at: datetime) -> int:
     if study_session.start_time is None:
         return 0
@@ -2448,11 +2460,17 @@ def complete_study_session(
     ended_at = datetime.now(timezone.utc)
     verified_total_seconds = _verified_study_seconds_for_session(db, study_session.id)
     auth_success_count = _auth_success_count_for_session(db, study_session.id)
-    study_session.status = (
-        SessionStatus.completed if auth_success_count > 0 else SessionStatus.cancelled
-    )
+    auth_non_success_count = _auth_non_success_count_for_session(db, study_session.id)
+    if auth_success_count > 0:
+        study_session.status = SessionStatus.completed
+        study_session.total_seconds = verified_total_seconds
+    elif auth_non_success_count > 0:
+        study_session.status = SessionStatus.failed
+        study_session.total_seconds = _session_elapsed_seconds(study_session, ended_at)
+    else:
+        study_session.status = SessionStatus.cancelled
+        study_session.total_seconds = 0
     study_session.end_time = ended_at
-    study_session.total_seconds = verified_total_seconds if auth_success_count > 0 else 0
     study_session.is_paused = False
     study_session.last_paused_at = None
 
