@@ -505,6 +505,29 @@ def _verified_study_seconds_for_session(db: Session, study_session_id: int) -> i
     return int(total or 0)
 
 
+def _auth_success_count_for_session(db: Session, study_session_id: int) -> int:
+    total = (
+        db.query(func.count(AuthLog.id))
+        .filter(
+            AuthLog.study_session_id == study_session_id,
+            AuthLog.status == "성공",
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def _session_elapsed_seconds(study_session: StudySession, ended_at: datetime) -> int:
+    if study_session.start_time is None:
+        return 0
+    start_time = study_session.start_time
+    if start_time.tzinfo is None:
+        start_time = start_time.replace(tzinfo=timezone.utc)
+    if ended_at.tzinfo is None:
+        ended_at = ended_at.replace(tzinfo=timezone.utc)
+    return max(int((ended_at - start_time).total_seconds()), 0)
+
+
 def _sync_user_total_study_time(db: Session, user: User) -> None:
     user.total_study_time = _user_verified_study_seconds(db, user.id)
 
@@ -1219,6 +1242,7 @@ def _run_video_verification(auth_log_id: int) -> None:
         else:
             study_session.status = SessionStatus.failed
             study_session.end_time = verified_at
+            study_session.total_seconds = _session_elapsed_seconds(study_session, verified_at)
 
         db.commit()
     finally:
@@ -2402,10 +2426,14 @@ def complete_study_session(
             detail="진행 중인 공부 세션만 완료할 수 있습니다",
         )
 
+    ended_at = datetime.now(timezone.utc)
     verified_total_seconds = _verified_study_seconds_for_session(db, study_session.id)
-    study_session.status = SessionStatus.completed
-    study_session.end_time = datetime.now(timezone.utc)
-    study_session.total_seconds = verified_total_seconds
+    auth_success_count = _auth_success_count_for_session(db, study_session.id)
+    study_session.status = (
+        SessionStatus.completed if auth_success_count > 0 else SessionStatus.cancelled
+    )
+    study_session.end_time = ended_at
+    study_session.total_seconds = verified_total_seconds if auth_success_count > 0 else 0
     study_session.is_paused = False
     study_session.last_paused_at = None
 
@@ -2468,8 +2496,10 @@ def create_focus_interruption(
         )
 
     if payload.penalty_applied:
+        ended_at = datetime.now(timezone.utc)
         study_session.status = SessionStatus.failed
-        study_session.end_time = datetime.now(timezone.utc)
+        study_session.end_time = ended_at
+        study_session.total_seconds = _session_elapsed_seconds(study_session, ended_at)
 
     db.add(focus_interruption)
 
@@ -2566,6 +2596,7 @@ def request_video_verification(
         else:
             study_session.status = SessionStatus.failed
             study_session.end_time = now
+            study_session.total_seconds = _session_elapsed_seconds(study_session, now)
             auth_log = AuthLog(
                 user_id=current_user.id,
                 study_session_id=study_session.id,
@@ -2685,6 +2716,7 @@ async def upload_auth_video(
         else:
             study_session.status = SessionStatus.failed
             study_session.end_time = now
+            study_session.total_seconds = _session_elapsed_seconds(study_session, now)
             db.commit()
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
