@@ -121,6 +121,7 @@ GROUP_VISIBILITIES = {"public", "private"}
 GROUP_REACTION_TYPES = {"poke", "heart", "fighting", "smile", "clap", "fire"}
 REST_DAILY_MAX_COUNT = 2
 REST_DAILY_MAX_SECONDS = 15 * 60
+AUTH_EARLY_UPLOAD_GRACE_SECONDS = 15
 DEFAULT_FURNITURE_CODE = "desk"
 ALLOWED_USER_MAJORS = {"engineering", "design", "medical", "business", "humanities"}
 ALLOWED_PET_TYPES = {"cat", "dog"}
@@ -2603,7 +2604,15 @@ def request_video_verification(
 
     now = datetime.now(timezone.utc)
     expires_at = auth_expires_at(study_session.next_auth_time)
-    if now < study_session.next_auth_time:
+    early_seconds = (study_session.next_auth_time - now).total_seconds()
+    if early_seconds > AUTH_EARLY_UPLOAD_GRACE_SECONDS:
+        print(
+            "[video-verify] bad_request early_auth_request",
+            f"study_session_id={study_session.id}",
+            f"now={now.isoformat()}",
+            f"next_auth_time={study_session.next_auth_time.isoformat()}",
+            f"early_seconds={round(early_seconds, 2)}",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="아직 인증 요청 시간이 아닙니다",
@@ -2722,7 +2731,15 @@ async def upload_auth_video(
         )
 
     now = datetime.now(timezone.utc)
-    if now < study_session.next_auth_time:
+    early_seconds = (study_session.next_auth_time - now).total_seconds()
+    if early_seconds > AUTH_EARLY_UPLOAD_GRACE_SECONDS:
+        print(
+            "[video-upload] bad_request early_auth_request",
+            f"study_session_id={study_session.id}",
+            f"now={now.isoformat()}",
+            f"next_auth_time={study_session.next_auth_time.isoformat()}",
+            f"early_seconds={round(early_seconds, 2)}",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="아직 인증 요청 시간이 아닙니다",
@@ -2743,6 +2760,11 @@ async def upload_auth_video(
 
     content_type = video.content_type or "video/mp4"
     if not content_type.startswith("video/"):
+        print(
+            "[video-upload] bad_request invalid_content_type",
+            f"study_session_id={study_session.id}",
+            f"content_type={content_type}",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="영상 파일만 업로드할 수 있습니다",
@@ -2756,6 +2778,11 @@ async def upload_auth_video(
         f"bytes={len(file_bytes)}",
     )
     if not file_bytes:
+        print(
+            "[video-upload] bad_request empty_file",
+            f"study_session_id={study_session.id}",
+            f"content_type={content_type}",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="업로드할 영상 파일이 비어 있습니다",
