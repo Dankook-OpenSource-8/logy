@@ -24,6 +24,8 @@ SCENE_SCORE_MAX = 60
 TEXT_SCORE_MAX = 40
 DEFAULT_TEXT_SCORE = 0
 STRONG_TEXT_SCORE = 36
+MISSING_OCR_SCENE_THRESHOLD = 35
+MISSING_OCR_TEXT_SCORE = 10
 EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
 
@@ -1921,6 +1923,13 @@ def select_best_verification_frame(
         if has_strong_study_evidence(text_score):
             text_score = TEXT_SCORE_MAX
             text_reason = f"{text_reason}, strong_text_evidence_boost={TEXT_SCORE_MAX}"
+        else:
+            text_score, text_reason = adjust_ocr_text_score(
+                extracted_text,
+                text_score,
+                text_reason,
+                scene_score,
+            )
         _perf_log("subject_similarity", text_started_at, text_score=text_score)
         total_score = max(
             0,
@@ -2527,6 +2536,50 @@ def is_formula_heavy_subject(subject: str) -> bool:
 
 def has_strong_study_evidence(text_score: int) -> bool:
     return text_score >= STRONG_TEXT_SCORE
+
+
+def adjust_ocr_text_score(
+    extracted_text: str,
+    text_score: int,
+    text_reason: str,
+    scene_score: int,
+) -> tuple[int, str]:
+    cleaned_text = extracted_text.strip()
+    if not cleaned_text:
+        if scene_score >= MISSING_OCR_SCENE_THRESHOLD:
+            boosted_score = max(text_score, MISSING_OCR_TEXT_SCORE)
+            return (
+                boosted_score,
+                f"{text_reason}, missing_ocr_scene_floor={boosted_score}",
+            )
+        return text_score, text_reason
+
+    if text_score <= 0 or not is_likely_corrupted_ocr_text(cleaned_text):
+        return text_score, text_reason
+
+    boosted_score = min(TEXT_SCORE_MAX, round(text_score * 1.5))
+    if boosted_score <= text_score:
+        return text_score, text_reason
+
+    return boosted_score, f"{text_reason}, corrupted_ocr_boost=1.5x:{boosted_score}"
+
+
+def is_likely_corrupted_ocr_text(extracted_text: str) -> bool:
+    cleaned_text = extracted_text.strip()
+    if len(cleaned_text) < 30:
+        return False
+
+    suspicious_chars = sum(1 for char in cleaned_text if char in "#`@\\|")
+    mixed_script_tokens = 0
+    for token in cleaned_text.split():
+        has_hangul = any("가" <= char <= "힣" for char in token)
+        has_ascii = any(("a" <= char.lower() <= "z") or char.isdigit() for char in token)
+        if has_hangul and has_ascii:
+            mixed_script_tokens += 1
+
+    compact_length = max(len(cleaned_text.replace(" ", "")), 1)
+    suspicious_ratio = suspicious_chars / compact_length
+    return suspicious_chars >= 2 or suspicious_ratio >= 0.02 or mixed_script_tokens >= 2
 
 
 def has_ocr_timeout(text_reason: str) -> bool:
