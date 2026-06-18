@@ -536,6 +536,9 @@ class GroupPetPlacementResponse(KSTBaseModel):
 class GroupMemberResponse(KSTBaseModel):
     user_id: UUID
     nickname: str
+    major: str | None
+    petType: str
+    petLevel: int
     role: str
     online_status: str
     study_status: str

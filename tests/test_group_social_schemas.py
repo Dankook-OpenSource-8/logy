@@ -54,6 +54,9 @@ class GroupSocialSchemaTest(unittest.TestCase):
         member = GroupMemberResponse(
             user_id=uuid4(),
             nickname="로기",
+            major="engineering",
+            petType="cat",
+            petLevel=2,
             role="member",
             online_status="online",
             study_status="idle",
@@ -76,6 +79,9 @@ class GroupSocialSchemaTest(unittest.TestCase):
         self.assertEqual(payload.members[0].today_study_seconds, 1800)
         self.assertEqual(payload.members[0].positionX, 80)
         self.assertEqual(payload.members[0].positionY, 340)
+        self.assertEqual(payload.members[0].major, "engineering")
+        self.assertEqual(payload.members[0].petType, "cat")
+        self.assertEqual(payload.members[0].petLevel, 2)
 
     def test_group_join_request_accepts_invite_code(self):
         payload = GroupJoinRequest(invite_code="ABCD1234")

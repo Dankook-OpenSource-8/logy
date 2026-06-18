@@ -1819,8 +1819,9 @@ def get_group_members(
         )
 
     members = (
-        db.query(GroupMember, User)
+        db.query(GroupMember, User, UserPet)
         .join(User, User.id == GroupMember.user_id)
+        .outerjoin(UserPet, UserPet.user_id == User.id)
         .filter(GroupMember.group_id == group_id)
         .order_by(GroupMember.joined_at.asc())
         .all()
@@ -1835,6 +1836,9 @@ def get_group_members(
             GroupMemberResponse(
                 user_id=user.id,
                 nickname=user.nickname,
+                major=user.major,
+                petType=pet.pet_type if pet is not None else "cat",
+                petLevel=pet.level if pet is not None else 1,
                 role=member.role,
                 online_status=member.online_status,
                 study_status=member.study_status,
@@ -1845,7 +1849,7 @@ def get_group_members(
                 total_study_seconds=_user_total_study_seconds(db, user.id),
                 today_study_seconds=_user_today_study_seconds(db, user.id),
             )
-            for member, user in members
+            for member, user, pet in members
         ],
     )
 
@@ -1894,10 +1898,14 @@ def update_group_presence(
     member.updated_at = now
     db.commit()
     db.refresh(member)
+    pet = db.query(UserPet).filter(UserPet.user_id == current_user.id).first()
 
     return GroupMemberResponse(
         user_id=current_user.id,
         nickname=current_user.nickname,
+        major=current_user.major,
+        petType=pet.pet_type if pet is not None else "cat",
+        petLevel=pet.level if pet is not None else 1,
         role=member.role,
         online_status=member.online_status,
         study_status=member.study_status,
