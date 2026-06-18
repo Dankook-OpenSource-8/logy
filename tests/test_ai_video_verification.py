@@ -12,6 +12,7 @@ from core.ai_video_verification import (
     OCR_MAX_DIMENSION,
     FrameVerificationResult,
     VerificationResult,
+    expand_subject,
     extract_text,
     has_ocr_timeout,
     prepare_ocr_image,
@@ -193,15 +194,15 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(score, 40)
         self.assertIn("subject_direct_match", reason)
 
-    def test_subject_text_score_limits_related_but_wrong_subject(self):
+    def test_subject_text_score_uses_embedding_similarity_without_keyword_cap(self):
         with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.72):
             score, reason = score_subject_similarity(
                 "데이터베이스",
-                "CPU 캐시 메모리 계층 레지스터 파이프라인 명령어 실행 과정을 정리했습니다.",
+                "관계형 모델에서 엔터티 간 연결과 질의 처리 흐름을 정리했습니다.",
             )
 
-        self.assertLessEqual(score, 20)
-        self.assertIn("subject_cap=20", reason)
+        self.assertGreaterEqual(score, 36)
+        self.assertNotIn("subject_cap", reason)
 
     def test_subject_text_score_gives_middle_score_for_one_core_keyword(self):
         with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.25):
@@ -243,6 +244,12 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         self.assertGreaterEqual(score, 32)
         self.assertIn("math_formula_evidence", reason)
+
+    def test_expands_common_unregistered_major_subjects(self):
+        expanded = expand_subject("열역학")
+
+        self.assertIn("thermodynamics", expanded)
+        self.assertIn("entropy", expanded)
 
     def test_video_verification_approves_from_65_points(self):
         with tempfile.TemporaryDirectory() as temp_dir:

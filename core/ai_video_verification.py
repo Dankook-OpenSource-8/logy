@@ -116,6 +116,62 @@ SUBJECT_ALIASES = {
     "디지털논리": "digital logic boolean gate flip flop latch mux decoder encoder truth table karnaugh",
     "제어공학": "control engineering feedback transfer function stability pid laplace bode root locus system response",
     "신호및시스템": "signals systems signal convolution fourier laplace frequency impulse response sampling filter",
+    "전기회로": "electric circuit circuit analysis voltage current resistance capacitance inductance impedance kirchhoff node mesh power",
+    "회로이론": "circuit theory circuit analysis voltage current resistance capacitance inductance impedance kirchhoff node mesh phasor",
+    "전자기학": "electromagnetics electric field magnetic field maxwell equation gauss law ampere faraday wave potential flux",
+    "통신공학": "communication engineering modulation demodulation signal noise channel bandwidth coding antenna transmission receiver",
+    "반도체공학": "semiconductor diode transistor mosfet pn junction carrier bandgap doping wafer fabrication cmos device",
+    "기계공학": "mechanical engineering force stress strain motion energy machine design mechanics thermodynamics fluid material",
+    "열역학": "thermodynamics heat work energy entropy enthalpy temperature pressure cycle ideal gas rankine carnot",
+    "유체역학": "fluid mechanics flow pressure viscosity reynolds bernoulli navier stokes boundary layer turbulence",
+    "재료역학": "mechanics of materials stress strain beam torsion bending shear moment deflection elasticity",
+    "동역학": "dynamics motion force acceleration velocity momentum vibration rigid body newton equation",
+    "정역학": "statics force moment equilibrium truss friction centroid free body diagram reaction",
+    "재료공학": "materials science crystal structure phase diagram alloy polymer ceramic metal composite microstructure heat treatment",
+    "화공양론": "chemical process principles stoichiometry mass balance energy balance mole fraction reaction conversion yield",
+    "유기화학": "organic chemistry hydrocarbon alkane alkene aromatic alcohol aldehyde ketone carboxylic acid reaction mechanism",
+    "분석화학": "analytical chemistry titration chromatography spectroscopy calibration concentration acid base redox equilibrium",
+    "건축학": "architecture building design space plan structure material site section elevation floor plan model",
+    "건축구조": "building structure load beam column slab foundation steel concrete seismic design moment shear",
+    "토목공학": "civil engineering structure soil concrete bridge road survey hydrology transportation foundation construction",
+    "환경공학": "environmental engineering water treatment wastewater air pollution waste management pollutant ecology sustainability",
+    "산업공학": "industrial engineering optimization operations research production scheduling quality ergonomics simulation logistics supply chain",
+    "품질경영": "quality management six sigma control chart process capability defect sampling iso improvement",
+    "인간공학": "ergonomics human factors usability posture workload interface anthropometry safety workplace design",
+    "해부학": "anatomy bone muscle nerve organ tissue skeleton artery vein body structure physiology",
+    "생리학": "physiology homeostasis cell membrane nervous endocrine cardiovascular respiratory renal metabolism hormone",
+    "병리학": "pathology disease inflammation necrosis tumor diagnosis infection immune tissue lesion etiology",
+    "약리학": "pharmacology drug receptor dose response pharmacokinetics pharmacodynamics adverse effect metabolism therapy",
+    "미생물학": "microbiology bacteria virus fungus culture infection immunity antibiotic pathogen gram staining",
+    "간호학": "nursing patient care assessment diagnosis intervention vital signs safety infection medication communication",
+    "기본간호학": "fundamentals of nursing patient care vital signs hygiene infection control medication assessment safety",
+    "성인간호학": "adult nursing cardiovascular respiratory digestive endocrine neurological patient assessment intervention care",
+    "공중보건": "public health epidemiology prevention health promotion disease surveillance population sanitation policy",
+    "심리학": "psychology cognition behavior emotion learning memory perception personality development experiment therapy",
+    "상담심리": "counseling psychology therapy client interview assessment empathy cognitive behavioral intervention case",
+    "교육학": "education curriculum instruction assessment pedagogy learning classroom teacher student development",
+    "교육심리": "educational psychology learning motivation cognition development assessment instruction behavior classroom",
+    "사회학": "sociology society culture group institution class inequality norm socialization research",
+    "사회복지": "social welfare case management policy community service client assessment intervention support",
+    "행정학": "public administration policy bureaucracy organization governance budget regulation public service decision",
+    "정치학": "political science state government democracy election party ideology power institution policy",
+    "법학": "law legal contract tort constitution criminal civil procedure rights obligation case statute",
+    "헌법": "constitutional law rights freedom separation of powers judicial review government state constitution",
+    "민법": "civil law contract property tort obligation ownership damages family inheritance",
+    "형법": "criminal law crime punishment intent negligence liability offense defense sentencing",
+    "영어": "english reading grammar vocabulary listening speaking writing comprehension paragraph sentence translation",
+    "영문법": "english grammar tense clause phrase subject verb object passive relative pronoun sentence",
+    "영어회화": "english conversation speaking listening dialogue expression pronunciation fluency question answer",
+    "일본어": "japanese hiragana katakana kanji grammar vocabulary reading listening conversation translation",
+    "중국어": "chinese pinyin hanzi grammar vocabulary reading listening conversation tone translation",
+    "한국사": "korean history dynasty joseon goryeo silla independence movement colonial period constitution culture",
+    "세계사": "world history civilization empire revolution war nationalism imperialism modern history culture",
+    "철학": "philosophy ethics metaphysics epistemology logic argument existence knowledge value philosopher",
+    "논리학": "logic proposition predicate inference proof validity truth table argument deduction induction",
+    "글쓰기": "writing composition essay paragraph thesis argument outline revision citation expression",
+    "디자인": "design concept layout color typography composition prototype user research visual communication",
+    "시각디자인": "visual design typography layout color branding poster grid composition illustration identity",
+    "UX디자인": "ux design user experience usability user research persona journey wireframe prototype interaction",
 }
 
 SUBJECT_CORE_KEYWORDS = {
@@ -1827,15 +1883,12 @@ def score_subject_similarity(subject: str | None, extracted_text: str) -> tuple[
 
     semantic_score = score_similarity(similarity)
     evidence_score, evidence_reason = score_academic_text_evidence(cleaned_subject, cleaned_text)
-    cap = subject_text_score_cap(cleaned_subject, keyword_score)
-    score = min(max(semantic_score, evidence_score, keyword_score), cap)
+    score = max(semantic_score, evidence_score, keyword_score)
     reason = f"text_similarity={similarity:.2f}"
     if keyword_reason:
         reason = f"{reason}, {keyword_reason}"
     if evidence_reason:
         reason = f"{reason}, {evidence_reason}"
-    if score < max(semantic_score, evidence_score, keyword_score):
-        reason = f"{reason}, subject_cap={cap}"
 
     return score, reason
 
