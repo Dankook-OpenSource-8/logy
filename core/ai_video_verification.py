@@ -57,7 +57,7 @@ FORBIDDEN_PROMPTS = (
 SUBJECT_ALIASES = {
     # OCR은 한국어 과목명보다 화면 속 영문 약어를 더 잘 잡는 경우가 많아 보조 키워드만 가볍게 붙입니다.
     "컴퓨터구조": "computer architecture cpu cache memory pipeline branch instruction datapath register alu if id ex mem store load hazard control",
-    "자료구조": "data structure hash bucket collision graph tree stack queue heap dfs bfs connected component",
+    "자료구조": "data structure abstract data type adt array list stack queue fifo lifo enqueue dequeue front rear empty size stl vector hash bucket collision graph tree heap dfs bfs connected component",
     "알고리즘": "algorithm dynamic programming greedy graph shortest path minimum spanning tree prim kruskal connected component",
     "데이터베이스": "database sql erd entity relation table customer primary key foreign key query ddl dml schema",
     "선형대수": "linear algebra vector matrix scalar basis span transformation eigenvalue determinant multiplication",
@@ -191,16 +191,29 @@ SUBJECT_CORE_KEYWORDS = {
         "파이프라인",
     },
     "자료구조": {
+        "adt",
         "array",
         "bfs",
         "dfs",
+        "dequeue",
+        "empty",
+        "enqueue",
+        "fifo",
+        "front",
         "graph",
         "hash",
         "heap",
+        "lifo",
         "queue",
+        "rear",
+        "size",
         "stack",
+        "stl",
         "tree",
+        "vector",
         "그래프",
+        "덱",
+        "리스트",
         "스택",
         "자료구조",
         "큐",
@@ -1393,6 +1406,97 @@ ACADEMIC_TEXT_HINTS.update(
         "생성자",
         "인터페이스",
         "클래스",
+    }
+)
+
+SUBJECT_ALIASES.update(
+    {
+        "컴퓨터공학": "computer science programming algorithm data structure database operating system network software engineering artificial intelligence",
+        "정보통신": "information communication network signal data communication wireless modulation protocol antenna transmission",
+        "전기전자공학": "electrical electronic engineering circuit electromagnetics semiconductor signal control communication microprocessor",
+        "기초전자공학": "basic electronics circuit diode transistor voltage current resistance capacitor amplifier semiconductor",
+        "데이터사이언스": "data science statistics machine learning dataframe visualization regression classification clustering preprocessing model",
+        "경영정보시스템": "management information system mis database erp crm decision support business process information technology",
+        "투자론": "investment portfolio stock bond risk return capm beta diversification valuation market",
+        "세법": "tax law income tax corporate tax value added tax deduction taxable income return",
+        "원가회계": "cost accounting cost allocation overhead variance standard costing activity based costing budget",
+        "물류관리": "logistics inventory transportation warehouse distribution supply chain lead time routing",
+        "공급사슬관리": "supply chain management procurement logistics inventory demand forecasting distribution supplier bullwhip",
+        "인적자원관리": "human resource management recruitment selection training performance appraisal compensation labor",
+        "국제경영": "international business globalization trade exchange rate multinational strategy foreign market",
+        "조직이론": "organization theory structure culture environment bureaucracy contingency decision power",
+        "광고홍보": "advertising public relations campaign media brand message audience promotion communication",
+        "소비자행동": "consumer behavior decision making attitude perception motivation purchase satisfaction loyalty",
+        "인지심리": "cognitive psychology memory attention perception language problem solving reasoning information processing",
+        "발달심리": "developmental psychology child adolescence attachment cognition social development piaget erikson",
+        "임상심리": "clinical psychology assessment diagnosis therapy disorder depression anxiety counseling case",
+        "범죄학": "criminology crime deviance victim policing punishment correction prevention justice",
+        "형사소송법": "criminal procedure investigation prosecution arrest warrant evidence trial defendant due process",
+        "행정법": "administrative law agency disposition appeal regulation public authority litigation",
+        "국제법": "international law treaty state sovereignty jurisdiction human rights un convention",
+        "교육과정": "curriculum education objective content instruction assessment lesson design learning outcome",
+        "교수학습": "teaching learning instruction pedagogy classroom strategy assessment feedback lesson",
+        "언어학": "linguistics phonetics phonology morphology syntax semantics pragmatics language grammar",
+        "문헌정보학": "library information science catalog metadata classification database retrieval archive bibliography",
+        "미디어커뮤니케이션": "media communication journalism broadcasting content audience platform public opinion message",
+        "기초디자인": "basic design dot line plane color shape composition contrast balance typography",
+        "패션디자인": "fashion design textile pattern silhouette garment color fabric collection",
+        "간호관리학": "nursing management leadership staffing delegation quality patient safety organization communication",
+        "모성간호학": "maternal nursing pregnancy labor delivery postpartum fetus newborn reproductive health",
+        "아동간호학": "pediatric nursing child growth development vaccination family fever respiratory care",
+        "정신간호학": "psychiatric nursing mental health depression anxiety schizophrenia therapeutic communication crisis",
+        "지역사회간호학": "community health nursing public health epidemiology family community prevention health promotion",
+        "보건통계": "health statistics epidemiology prevalence incidence odds ratio relative risk confidence interval",
+        "영양학": "nutrition carbohydrate protein fat vitamin mineral metabolism calorie diet digestion",
+        "운동생리학": "exercise physiology muscle oxygen heart rate metabolism energy aerobic anaerobic training",
+        "스포츠과학": "sports science biomechanics exercise physiology training performance injury motor learning",
+        "식품공학": "food engineering processing preservation fermentation sterilization packaging quality safety",
+        "분자생물학": "molecular biology dna rna replication transcription translation protein gene expression",
+        "유전학": "genetics gene chromosome inheritance allele mutation genotype phenotype mendel",
+        "생화학": "biochemistry enzyme protein carbohydrate lipid metabolism glycolysis krebs atp",
+    }
+)
+
+SUBJECT_CORE_KEYWORDS.update(
+    {
+        "전기회로": {"circuit", "kirchhoff", "node", "mesh", "impedance", "phasor", "voltage", "current", "전압", "전류", "임피던스", "키르히호프"},
+        "회로이론": {"circuit", "kirchhoff", "node", "mesh", "impedance", "phasor", "voltage", "current", "전압", "전류", "회로", "키르히호프"},
+        "전자기학": {"electric field", "magnetic field", "maxwell", "gauss", "faraday", "flux", "전기장", "자기장", "맥스웰", "가우스", "자속"},
+        "통신공학": {"modulation", "demodulation", "channel", "bandwidth", "antenna", "receiver", "변조", "복조", "채널", "대역폭", "안테나"},
+        "반도체공학": {"semiconductor", "mosfet", "diode", "transistor", "pn junction", "carrier", "doping", "반도체", "다이오드", "트랜지스터", "도핑"},
+        "열역학": {"entropy", "enthalpy", "temperature", "pressure", "cycle", "ideal gas", "heat", "work", "엔트로피", "엔탈피", "열", "일", "사이클"},
+        "유체역학": {"flow", "pressure", "viscosity", "reynolds", "bernoulli", "navier", "turbulence", "유동", "압력", "점성", "레이놀즈", "베르누이"},
+        "재료역학": {"stress", "strain", "beam", "torsion", "bending", "shear", "moment", "deflection", "응력", "변형률", "보", "전단", "모멘트"},
+        "정역학": {"equilibrium", "force", "moment", "truss", "friction", "centroid", "free body", "평형", "힘", "모멘트", "트러스", "마찰"},
+        "화공양론": {"stoichiometry", "mass balance", "energy balance", "mole", "conversion", "yield", "물질수지", "에너지수지", "몰", "전환율", "수율"},
+        "유기화학": {"alkane", "alkene", "aromatic", "alcohol", "aldehyde", "ketone", "reaction mechanism", "유기", "알코올", "케톤", "반응메커니즘"},
+        "건축구조": {"load", "beam", "column", "slab", "foundation", "concrete", "seismic", "하중", "보", "기둥", "슬래브", "기초", "콘크리트"},
+        "토목공학": {"structure", "soil", "concrete", "bridge", "road", "survey", "hydrology", "구조", "토질", "교량", "도로", "측량", "수문"},
+        "산업공학": {"optimization", "operations research", "scheduling", "quality", "simulation", "logistics", "최적화", "스케줄링", "품질", "시뮬레이션", "물류"},
+        "해부학": {"anatomy", "bone", "muscle", "nerve", "organ", "tissue", "skeleton", "artery", "뼈", "근육", "신경", "장기", "조직"},
+        "생리학": {"physiology", "homeostasis", "membrane", "nervous", "endocrine", "cardiovascular", "renal", "항상성", "막", "신경", "내분비", "심혈관"},
+        "병리학": {"pathology", "disease", "inflammation", "necrosis", "tumor", "infection", "lesion", "질병", "염증", "괴사", "종양", "감염"},
+        "약리학": {"pharmacology", "drug", "receptor", "dose", "pharmacokinetics", "adverse effect", "약물", "수용체", "용량", "약동학", "부작용"},
+        "간호학": {"nursing", "patient", "assessment", "intervention", "vital signs", "infection", "medication", "간호", "환자", "사정", "중재", "활력징후"},
+        "심리학": {"psychology", "cognition", "behavior", "emotion", "learning", "memory", "personality", "심리", "인지", "행동", "정서", "기억"},
+        "교육학": {"education", "curriculum", "instruction", "assessment", "pedagogy", "classroom", "교육", "교육과정", "교수", "평가", "수업"},
+        "사회학": {"sociology", "society", "culture", "institution", "class", "inequality", "socialization", "사회", "문화", "계급", "불평등"},
+        "행정학": {"public administration", "policy", "bureaucracy", "governance", "budget", "regulation", "행정", "정책", "관료제", "예산", "규제"},
+        "법학": {"law", "contract", "tort", "constitution", "criminal", "civil", "procedure", "rights", "법", "계약", "불법행위", "헌법", "형법", "민법"},
+        "영어": {"english", "grammar", "vocabulary", "reading", "listening", "speaking", "writing", "영어", "문법", "어휘", "독해", "작문"},
+        "한국사": {"joseon", "goryeo", "silla", "independence movement", "colonial", "dynasty", "조선", "고려", "신라", "독립운동", "일제"},
+        "세계사": {"civilization", "empire", "revolution", "war", "nationalism", "imperialism", "문명", "제국", "혁명", "전쟁", "제국주의"},
+        "디자인": {"design", "layout", "color", "typography", "composition", "prototype", "디자인", "레이아웃", "색채", "타이포그래피", "구성"},
+        "데이터사이언스": {"data science", "dataframe", "visualization", "regression", "classification", "clustering", "preprocessing", "데이터", "시각화", "회귀", "분류", "군집"},
+    }
+)
+
+ACADEMIC_TEXT_HINTS.update(
+    {
+        keyword
+        for keywords in SUBJECT_CORE_KEYWORDS.values()
+        for keyword in keywords
+        if " " not in keyword
     }
 )
 

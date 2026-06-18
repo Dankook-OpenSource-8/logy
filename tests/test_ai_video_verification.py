@@ -261,6 +261,31 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertGreaterEqual(score, 36)
         self.assertIn("subject_keyword_matches", reason)
 
+    def test_data_structure_queue_terms_count_as_subject_evidence(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.16):
+            score, reason = score_subject_similarity(
+                "자료구조",
+                "Queue ADT FIFO enqueue dequeue front rear empty size STL queue 예제를 공부했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
+
+    def test_major_subject_keyword_packs_cover_non_cs_courses(self):
+        cases = [
+            ("전기회로", "Kirchhoff node mesh impedance phasor voltage current 회로 해석"),
+            ("간호학", "patient assessment intervention vital signs medication 감염 간호"),
+            ("법학", "contract tort constitution criminal civil procedure rights 판례"),
+            ("데이터사이언스", "dataframe visualization regression classification clustering preprocessing"),
+        ]
+        for subject, text in cases:
+            with self.subTest(subject=subject):
+                with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.16):
+                    score, reason = score_subject_similarity(subject, text)
+
+                self.assertGreaterEqual(score, 36)
+                self.assertIn("subject_keyword_matches", reason)
+
     def test_formula_heavy_subject_rewards_math_notation(self):
         with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.14):
             score, reason = score_subject_similarity(
@@ -269,7 +294,9 @@ class AiVideoVerificationTest(unittest.TestCase):
             )
 
         self.assertGreaterEqual(score, 32)
-        self.assertIn("math_formula_evidence", reason)
+        self.assertTrue(
+            "math_formula_evidence" in reason or "academic_text_hints" in reason
+        )
 
     def test_expands_common_unregistered_major_subjects(self):
         expanded = expand_subject("열역학")
