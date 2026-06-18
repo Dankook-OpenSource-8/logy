@@ -31,8 +31,8 @@ SET pet_type = 'cat'
 WHERE pet_type IS NULL OR pet_type NOT IN ('cat', 'dog');
 
 UPDATE user_pets
-SET level = 4
-WHERE level > 4;
+SET level = 5
+WHERE level > 5;
 
 CREATE TABLE IF NOT EXISTS furniture_items (
     id SERIAL PRIMARY KEY,

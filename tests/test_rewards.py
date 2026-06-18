@@ -5,6 +5,8 @@ from core.rewards import (
     attendance_reward,
     furniture_progress_from_auth_minutes,
     next_pet_stage,
+    pet_current_level_exp,
+    pet_current_level_required_exp,
     pet_exp_from_verified_seconds,
     pet_level_from_exp,
     pet_stage_name,
@@ -26,7 +28,7 @@ class RewardFormulaTest(unittest.TestCase):
         self.assertEqual(pet_level_from_exp(20), 2)
         self.assertEqual(pet_level_from_exp(80), 3)
         self.assertEqual(pet_level_from_exp(200), 4)
-        self.assertEqual(pet_level_from_exp(400), 4)
+        self.assertEqual(pet_level_from_exp(400), 5)
 
     def test_pet_level_stays_at_previous_stage_before_threshold(self):
         self.assertEqual(pet_level_from_exp(19), 1)
@@ -35,13 +37,19 @@ class RewardFormulaTest(unittest.TestCase):
         self.assertEqual(pet_level_from_exp(399), 4)
 
     def test_pet_stage_name_matches_level(self):
-        self.assertEqual(pet_stage_name(1), "알/작은 새싹 펫")
-        self.assertEqual(pet_stage_name(4), "전공별 장비 착용")
-        self.assertEqual(pet_stage_name(5), "전공별 장비 착용")
+        self.assertEqual(pet_stage_name(1), "알")
+        self.assertEqual(pet_stage_name(4), "어른")
+        self.assertEqual(pet_stage_name(5), "전공 용품")
+        self.assertEqual(pet_stage_name(6), "전공 용품")
 
     def test_next_pet_stage_returns_none_at_max_level(self):
         self.assertEqual(next_pet_stage(0)["level"], 2)
-        self.assertIsNone(next_pet_stage(200))
+        self.assertIsNone(next_pet_stage(400))
+
+    def test_pet_current_level_progress_uses_current_level_requirement(self):
+        self.assertEqual(pet_level_from_exp(199), 3)
+        self.assertEqual(pet_current_level_exp(199), 119)
+        self.assertEqual(pet_current_level_required_exp(199), 120)
 
     def test_first_attendance_gives_base_bonus(self):
         reward = attendance_reward(None, 0, date(2026, 5, 29))

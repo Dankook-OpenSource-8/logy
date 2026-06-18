@@ -245,6 +245,8 @@ class PetStageResponse(KSTBaseModel):
     level: int
     name: str
     requiredExp: int
+    levelUpExp: int
+    totalRequiredExp: int
 
 
 class UserPetResponse(KSTBaseModel):
@@ -256,6 +258,9 @@ class UserPetResponse(KSTBaseModel):
     level: int
     stageName: str
     totalExp: int
+    currentLevelExp: int
+    currentLevelRequiredExp: int
+    currentLevelProgressPercent: int
     placed: bool
     positionX: int
     positionY: int
