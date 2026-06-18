@@ -107,7 +107,7 @@ def _recommendation(risk_level: str) -> str:
 
 
 def _day_name(day_of_week: int) -> str:
-    return ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"][day_of_week]
+    return ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][day_of_week]
 
 
 def _local_start_time(start_time: datetime, timezone_name: str) -> datetime:
@@ -174,7 +174,7 @@ def build_focus_analytics(
     slot_stats: dict[tuple[int, int], dict[str, int]] = {}
     for session in completed_sessions:
         local_start_time = _local_start_time(session.start_time, timezone_name)
-        day_of_week = (local_start_time.weekday() + 1) % 7
+        day_of_week = local_start_time.weekday()
         hour = local_start_time.hour
         day_stats[day_of_week]["total"] += 1
         if session.status == "failed":

@@ -41,7 +41,7 @@ class FocusAnalyticsTest(unittest.TestCase):
         tuesday_7 = next(
             item
             for item in result["riskMap"]
-            if item["dayOfWeek"] == 2 and item["hour"] == 7
+            if item["dayOfWeek"] == 1 and item["hour"] == 7
         )
         self.assertEqual(tuesday_7["totalAttempts"], 2)
         self.assertEqual(tuesday_7["failedAttempts"], 1)
@@ -244,10 +244,10 @@ class FocusAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["collapsePrediction"]["predictedCollapseMinute"], 11)
         self.assertEqual(result["collapsePrediction"]["sampleSize"], 2)
 
-    def test_sunday_maps_to_zero(self):
+    def test_sunday_maps_to_six_for_monday_first_frontend_heatmap(self):
         result = build_focus_analytics([make_session(3, 9, "completed", 40)])
 
-        self.assertEqual(result["riskMap"][0]["dayOfWeek"], 0)
+        self.assertEqual(result["riskMap"][0]["dayOfWeek"], 6)
         self.assertEqual(result["summary"]["highestRiskDay"], "일요일")
 
     def test_hour_is_converted_to_kst_for_frontend_heatmap(self):
@@ -298,7 +298,7 @@ class FocusAnalyticsTest(unittest.TestCase):
 
         self.assertEqual(
             [(item["dayOfWeek"], item["hour"]) for item in result["riskMap"]],
-            [(1, 16), (1, 18), (3, 7)],
+            [(0, 16), (0, 18), (2, 7)],
         )
 
     def test_output_values_are_rounded_for_api_response(self):
