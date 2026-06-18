@@ -3,13 +3,13 @@ from datetime import datetime, timedelta
 from random import Random
 
 
-AUTH_DELAY_MINUTES = tuple(range(50, 71))
-AUTH_RESPONSE_LIMIT_SECONDS = 60
+AUTH_DELAY_MINUTES = tuple(range(5, 7))
+AUTH_RESPONSE_LIMIT_SECONDS = 120
 
 
 def weighted_auth_delay_minutes(rng: Random | None = None) -> int:
     generator = rng or random
-    weights = [11 - abs(minute - 60) for minute in AUTH_DELAY_MINUTES]
+    weights = [1 for _ in AUTH_DELAY_MINUTES]
     return generator.choices(AUTH_DELAY_MINUTES, weights=weights, k=1)[0]
 
 

@@ -11,6 +11,7 @@ from core.ai_video_verification import RETAKE_THRESHOLD, verify_study_video
 from core.auth import create_access_token, get_current_user, hash_password, verify_password
 from core.expo_push import send_expo_push_notifications
 from core.random_auth_schedule import (
+    AUTH_RESPONSE_LIMIT_SECONDS,
     auth_expires_at,
     is_auth_expired,
     weighted_auth_delay_minutes,
@@ -2570,8 +2571,8 @@ def request_video_verification(
                 study_session_id=study_session.id,
                 video_url=video_url,
                 status="시간초과",
-                error_message="인증 제한 시간 60초를 초과했습니다.",
-                verification_reason="인증 제한 시간 60초를 초과하여 실패 처리되었습니다.",
+                error_message=f"인증 제한 시간 {AUTH_RESPONSE_LIMIT_SECONDS}초를 초과했습니다.",
+                verification_reason=f"인증 제한 시간 {AUTH_RESPONSE_LIMIT_SECONDS}초를 초과하여 실패 처리되었습니다.",
                 verified_at=now,
             )
             db.add(auth_log)
@@ -2687,7 +2688,7 @@ async def upload_auth_video(
             db.commit()
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail="인증 제한 시간 60초를 초과했습니다",
+                detail=f"인증 제한 시간 {AUTH_RESPONSE_LIMIT_SECONDS}초를 초과했습니다",
             )
 
     content_type = video.content_type or "video/mp4"
