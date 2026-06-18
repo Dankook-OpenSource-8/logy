@@ -2107,6 +2107,15 @@ def read_ocr_text_with_timeout(ocr_image_path: Path, timeout_seconds: int) -> li
         return []
 
     if result_queue.empty():
+        try:
+            result = read_ocr_text_variants(str(ocr_image_path))
+            if result:
+                _ocr_error = None
+                return result
+        except Exception as exc:
+            _ocr_error = f"OCRWorkerError: {_short_error(exc)}"
+            return []
+
         _ocr_error = "OCRWorkerError: OCR 처리 결과를 받지 못했습니다."
         return []
 
@@ -2143,31 +2152,62 @@ def read_text_from_ocr_server(ocr_image_path: Path) -> str | None:
     except Exception as exc:
         _perf_log("ocr_server", started_at, status="error")
         _ocr_error = f"OCRServerError: {_short_error(exc)}"
-        return ""
+        return None
 
     _perf_log("ocr_server", started_at, status="ok")
     if isinstance(payload, dict):
         text = payload.get("text")
         if isinstance(text, str):
             _ocr_error = None
-            return text.strip()
+            cleaned_text = text.strip()
+            return cleaned_text if cleaned_text else None
 
         texts = payload.get("texts")
         if isinstance(texts, list):
             _ocr_error = None
-            return " ".join(str(item) for item in texts if item).strip()
+            cleaned_text = " ".join(str(item) for item in texts if item).strip()
+            return cleaned_text if cleaned_text else None
 
     _ocr_error = "OCRServerError: OCR 서버 응답 형식이 올바르지 않습니다."
-    return ""
+    return None
 
 
 def _read_ocr_text_worker(image_path: str, result_queue) -> None:
     try:
-        reader = get_ocr_reader()
-        result = reader.readtext(image_path, detail=0)
-        result_queue.put(("ok", [text for text in result if text]))
+        result_queue.put(("ok", read_ocr_text_variants(image_path)))
     except Exception as exc:
         result_queue.put(("error", _short_error(exc)))
+
+
+def read_ocr_text_variants(image_path: str) -> list[str]:
+    reader = get_ocr_reader()
+    attempts = (
+        {"detail": 0},
+        {
+            "detail": 0,
+            "canvas_size": 1280,
+            "min_size": 20,
+            "bbox_min_size": 8,
+            "text_threshold": 0.4,
+            "low_text": 0.2,
+        },
+        {
+            "detail": 0,
+            "canvas_size": 1920,
+            "min_size": 10,
+            "bbox_min_size": 5,
+            "text_threshold": 0.3,
+            "low_text": 0.1,
+        },
+    )
+    best_result: list[str] = []
+    for options in attempts:
+        result = [text for text in reader.readtext(image_path, **options) if text]
+        if len(" ".join(result)) > len(" ".join(best_result)):
+            best_result = result
+        if len(best_result) >= 8 or len(" ".join(best_result)) >= 120:
+            break
+    return best_result
 
 
 def get_ocr_reader():
