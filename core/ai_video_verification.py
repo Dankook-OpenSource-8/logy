@@ -1603,13 +1603,14 @@ def select_best_verification_frame(
 
         text_started_at = time.perf_counter()
         text_score, text_reason = score_subject_similarity(subject, extracted_text)
+        if has_strong_study_evidence(text_score):
+            text_score = TEXT_SCORE_MAX
+            text_reason = f"{text_reason}, strong_text_evidence_boost={TEXT_SCORE_MAX}"
         _perf_log("subject_similarity", text_started_at, text_score=text_score)
         total_score = max(
             0,
             min(100, scene_score + text_score),
         )
-        if has_strong_study_evidence(text_score):
-            total_score = max(total_score, 72)
 
         frame_result = FrameVerificationResult(
             frame_path=frame_path,
