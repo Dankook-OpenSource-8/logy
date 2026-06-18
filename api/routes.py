@@ -496,6 +496,22 @@ def _user_today_study_seconds(db: Session, user_id, now: datetime | None = None)
     return _user_verified_study_seconds(db, user_id, day_start, day_end)
 
 
+def _user_today_reward_auth_count(db: Session, user_id, now: datetime | None = None) -> int:
+    day_start, day_end = app_day_bounds(app_date(now))
+    total = (
+        db.query(func.count(RewardLedger.id))
+        .join(AuthLog, AuthLog.id == RewardLedger.auth_log_id)
+        .filter(
+            RewardLedger.user_id == user_id,
+            AuthLog.status == "성공",
+            AuthLog.verified_at >= day_start,
+            AuthLog.verified_at < day_end,
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
 def _verified_study_seconds_for_session(db: Session, study_session_id: int) -> int:
     total = (
         db.query(func.coalesce(func.sum(RewardLedger.verified_seconds), 0))
@@ -1060,6 +1076,8 @@ def _reward_state_response(db: Session, user: User) -> dict:
         "pet": _pet_response(pet),
         "furniture": furniture,
         "placements": [_placement_response(placement) for placement in placements],
+        "todayStudySeconds": _user_today_study_seconds(db, user.id),
+        "authSuccessCount": _user_today_reward_auth_count(db, user.id),
     }
 
 
