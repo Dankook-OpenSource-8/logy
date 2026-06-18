@@ -176,6 +176,64 @@ class AiVideoVerificationTest(unittest.TestCase):
         self.assertEqual(result.total_score, 40)
         self.assertIn("strong_text_evidence_boost=40", result.text_reason)
 
+    def test_missing_ocr_gets_small_floor_when_scene_is_study_like(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+
+            with (
+                patch("core.ai_video_verification.score_frame_quality", return_value=10),
+                patch("core.ai_video_verification.extract_text", return_value=""),
+                patch("core.ai_video_verification.score_subject_similarity", return_value=(0, "OCR 텍스트가 없습니다.")),
+                patch(
+                    "core.ai_video_verification.score_with_study_classifier",
+                    return_value=StudyClassifierResult(
+                        available=True,
+                        study_probability=0.7,
+                        scene_score=38,
+                        forbidden_penalty=0,
+                        reason="fine_tuned_study_probability=0.70",
+                    ),
+                ),
+            ):
+                result = select_best_verification_frame([frame_path], "미술치료")
+
+        self.assertEqual(result.text_score, 10)
+        self.assertEqual(result.total_score, 48)
+        self.assertIn("missing_ocr_scene_floor=10", result.text_reason)
+
+    def test_corrupted_ocr_evidence_gets_multiplier_without_exceeding_text_max(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_path = Path(temp_dir) / "frame.jpg"
+            frame_path.write_bytes(b"fake")
+
+            with (
+                patch("core.ai_video_verification.score_frame_quality", return_value=10),
+                patch(
+                    "core.ai_video_verification.extract_text",
+                    return_value="미술치료m 집단상담 # 표현활동 ` 내담자@ 정서표현 치료과정",
+                ),
+                patch(
+                    "core.ai_video_verification.score_subject_similarity",
+                    return_value=(24, "subject_keyword_matches=1:미술치료"),
+                ),
+                patch(
+                    "core.ai_video_verification.score_with_study_classifier",
+                    return_value=StudyClassifierResult(
+                        available=True,
+                        study_probability=0.6,
+                        scene_score=30,
+                        forbidden_penalty=0,
+                        reason="fine_tuned_study_probability=0.60",
+                    ),
+                ),
+            ):
+                result = select_best_verification_frame([frame_path], "미술치료")
+
+        self.assertEqual(result.text_score, 36)
+        self.assertEqual(result.total_score, 66)
+        self.assertIn("corrupted_ocr_boost=1.5x:36", result.text_reason)
+
     def test_first_passing_frame_stops_scoring(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             first_frame = Path(temp_dir) / "frame_2_0.jpg"
@@ -281,6 +339,7 @@ class AiVideoVerificationTest(unittest.TestCase):
             ("미술치료", "art therapy client emotion expression drawing assessment intervention counseling"),
             ("교육학개론", "curriculum instruction assessment classroom teacher student learning development"),
             ("생명과학개론", "biology cell dna gene protein evolution ecology organism metabolism"),
+            ("생명공학개론", "protein amino acid peptide collagen glycosylation posttranslational modification hydroxyproline"),
         ]
         for subject, text in cases:
             with self.subTest(subject=subject):
@@ -307,6 +366,26 @@ class AiVideoVerificationTest(unittest.TestCase):
 
         self.assertIn("thermodynamics", expanded)
         self.assertIn("entropy", expanded)
+
+    def test_related_subject_family_keywords_help_unregistered_subject_names(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.08):
+            score, reason = score_subject_similarity(
+                "생명공학 개론",
+                "단백질 아미노산 collagen posttranslational glycosylation hydroxylysine 내용을 정리했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
+
+    def test_education_family_keywords_help_related_subject_names(self):
+        with patch("core.ai_video_verification.calculate_text_similarity", return_value=0.08):
+            score, reason = score_subject_similarity(
+                "교육상담",
+                "상담 장면에서 내담자의 정서와 학습 동기, 평가, 교수 방법을 분석했습니다.",
+            )
+
+        self.assertGreaterEqual(score, 36)
+        self.assertIn("subject_keyword_matches", reason)
 
     def test_video_verification_approves_from_65_points(self):
         with tempfile.TemporaryDirectory() as temp_dir:

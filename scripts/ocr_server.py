@@ -35,18 +35,41 @@ async def read_ocr(file: UploadFile = File(...)) -> dict[str, object]:
 
 def read_text_safely(image_path: str) -> tuple[list[str], str | None]:
     try:
-        return reader.readtext(image_path, detail=0), None
+        return read_text_variants(image_path), None
     except Exception as first_error:
         try:
-            texts = reader.readtext(
-                image_path,
-                detail=0,
-                canvas_size=1280,
-                min_size=40,
-                bbox_min_size=12,
-                text_threshold=0.6,
-                low_text=0.3,
-            )
+            texts = read_text_variants(image_path, relaxed_only=True)
             return texts, f"retried_after={type(first_error).__name__}"
         except Exception as second_error:
             return [], f"{type(first_error).__name__}: {first_error}; retry={type(second_error).__name__}: {second_error}"
+
+
+def read_text_variants(image_path: str, relaxed_only: bool = False) -> list[str]:
+    attempts = (
+        {"detail": 0},
+        {
+            "detail": 0,
+            "canvas_size": 1280,
+            "min_size": 20,
+            "bbox_min_size": 8,
+            "text_threshold": 0.4,
+            "low_text": 0.2,
+        },
+        {
+            "detail": 0,
+            "canvas_size": 1920,
+            "min_size": 10,
+            "bbox_min_size": 5,
+            "text_threshold": 0.3,
+            "low_text": 0.1,
+        },
+    )
+    selected_attempts = attempts[1:] if relaxed_only else attempts
+    best_result: list[str] = []
+    for options in selected_attempts:
+        result = [text for text in reader.readtext(image_path, **options) if text]
+        if len(" ".join(result)) > len(" ".join(best_result)):
+            best_result = result
+        if len(best_result) >= 8 or len(" ".join(best_result)) >= 120:
+            break
+    return best_result

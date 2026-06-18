@@ -345,6 +345,8 @@ class RewardStateResponse(KSTBaseModel):
     pet: UserPetResponse
     furniture: list[FurnitureItemProgressResponse]
     placements: list[FurniturePlacementResponse]
+    todayStudySeconds: int = 0
+    authSuccessCount: int = 0
 
 
 class RewardSettlementResponse(KSTBaseModel):

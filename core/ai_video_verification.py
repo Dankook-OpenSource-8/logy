@@ -24,6 +24,8 @@ SCENE_SCORE_MAX = 60
 TEXT_SCORE_MAX = 40
 DEFAULT_TEXT_SCORE = 0
 STRONG_TEXT_SCORE = 36
+MISSING_OCR_SCENE_THRESHOLD = 35
+MISSING_OCR_TEXT_SCORE = 10
 EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
 
@@ -1516,6 +1518,8 @@ SUBJECT_ALIASES.update(
         "분자생물학": "molecular biology dna rna replication transcription translation protein gene expression",
         "유전학": "genetics gene chromosome inheritance allele mutation genotype phenotype mendel",
         "생화학": "biochemistry enzyme protein carbohydrate lipid metabolism glycolysis krebs atp",
+        "생명공학": "biotechnology biology cell dna gene protein amino acid peptide collagen enzyme fermentation genetic engineering molecular biology biochemistry",
+        "생명공학개론": "introduction to biotechnology biology cell dna gene protein amino acid peptide collagen enzyme fermentation genetic engineering molecular biology biochemistry",
         "세포생물학": "cell biology membrane organelle nucleus mitochondria cell cycle cytoskeleton signaling",
         "동물생리학": "animal physiology nervous endocrine circulation respiration digestion excretion homeostasis",
         "식물생리학": "plant physiology photosynthesis transpiration hormone xylem phloem stomata growth",
@@ -1669,6 +1673,8 @@ SUBJECT_CORE_KEYWORDS.update(
         "간호연구": {"nursing research", "evidence", "hypothesis", "sample", "statistics", "validity", "간호연구", "근거", "가설", "표본", "타당도"},
         "역학": {"epidemiology", "prevalence", "incidence", "cohort", "odds ratio", "relative risk", "역학", "유병률", "발생률", "코호트"},
         "면역학": {"immunology", "antigen", "antibody", "immune", "t cell", "b cell", "면역", "항원", "항체", "백신"},
+        "생명공학": {"biotechnology", "biology", "cell", "dna", "gene", "protein", "amino acid", "peptide", "collagen", "enzyme", "fermentation", "molecular biology", "biochemistry", "glycosylation", "posttranslational", "hydroxyproline", "hydroxylysine", "생명공학", "생명", "세포", "유전자", "단백질", "아미노산", "펩타이드", "콜라겐", "효소", "발효", "분자생물학", "생화학", "당화", "번역후", "수산화", "하이드록시프롤린", "하이드록시라이신"},
+        "생명공학개론": {"biotechnology", "biology", "cell", "dna", "gene", "protein", "amino acid", "peptide", "collagen", "enzyme", "fermentation", "molecular biology", "biochemistry", "glycosylation", "posttranslational", "hydroxyproline", "hydroxylysine", "생명공학", "생명", "세포", "유전자", "단백질", "아미노산", "펩타이드", "콜라겐", "효소", "발효", "분자생물학", "생화학", "당화", "번역후", "수산화", "하이드록시프롤린", "하이드록시라이신"},
         "영어": {"english", "grammar", "vocabulary", "reading", "listening", "speaking", "writing", "영어", "문법", "어휘", "독해", "작문"},
         "한국사": {"joseon", "goryeo", "silla", "independence movement", "colonial", "dynasty", "조선", "고려", "신라", "독립운동", "일제"},
         "세계사": {"civilization", "empire", "revolution", "war", "nationalism", "imperialism", "문명", "제국", "혁명", "전쟁", "제국주의"},
@@ -1701,6 +1707,66 @@ SUBJECT_CORE_KEYWORDS.update(
         "계량경제학": {"econometrics", "regression", "time series", "panel data", "estimator", "계량경제", "회귀", "시계열", "패널"},
     }
 )
+
+SUBJECT_FAMILY_SUBJECTS = {
+    "생명": (
+        "생명공학",
+        "생명공학개론",
+        "생명과학",
+        "생명과학개론",
+        "생명학개론",
+        "일반생물학",
+        "분자생물학",
+        "생화학",
+        "세포생물학",
+        "유전학",
+    ),
+    "생물": (
+        "생명과학",
+        "일반생물학",
+        "분자생물학",
+        "생화학",
+        "세포생물학",
+        "유전학",
+        "미생물학",
+    ),
+    "물리치료": ("물리치료학",),
+    "물리": ("물리", "일반물리학"),
+    "교육": (
+        "교육학",
+        "교육학개론",
+        "교육심리",
+        "교육행정",
+        "특수교육",
+        "보건교육",
+        "한국어교육",
+    ),
+    "상담": ("상담심리", "청소년상담", "가족상담", "미술치료", "심리학"),
+    "심리": ("심리학", "상담심리", "교육심리"),
+    "법": ("법학", "헌법", "민법", "형법", "상법", "회사법", "노동법", "지식재산"),
+    "지식재산": ("지식재산", "지식재산권", "지적재산권"),
+    "회계": ("회계", "재무회계", "관리회계"),
+    "경제": ("경제", "미시경제", "거시경제", "계량경제학"),
+    "경영": ("경영", "마케팅", "재무관리", "생산운영관리", "조직행동론"),
+    "통계": ("통계", "기초통계학", "통계학개론", "보건통계", "실험통계"),
+    "컴퓨터": (
+        "컴퓨터공학개론",
+        "프로그래밍",
+        "자료구조",
+        "알고리즘",
+        "데이터베이스",
+        "운영체제",
+        "컴퓨터네트워크",
+    ),
+    "프로그래밍": (
+        "프로그래밍",
+        "프로그래밍기초",
+        "자바프로그래밍",
+        "파이썬프로그래밍",
+        "C프로그래밍",
+        "객체지향프로그래밍",
+    ),
+}
 
 ACADEMIC_TEXT_HINTS.update(
     {
@@ -1921,6 +1987,13 @@ def select_best_verification_frame(
         if has_strong_study_evidence(text_score):
             text_score = TEXT_SCORE_MAX
             text_reason = f"{text_reason}, strong_text_evidence_boost={TEXT_SCORE_MAX}"
+        else:
+            text_score, text_reason = adjust_ocr_text_score(
+                extracted_text,
+                text_score,
+                text_reason,
+                scene_score,
+            )
         _perf_log("subject_similarity", text_started_at, text_score=text_score)
         total_score = max(
             0,
@@ -2107,6 +2180,15 @@ def read_ocr_text_with_timeout(ocr_image_path: Path, timeout_seconds: int) -> li
         return []
 
     if result_queue.empty():
+        try:
+            result = read_ocr_text_variants(str(ocr_image_path))
+            if result:
+                _ocr_error = None
+                return result
+        except Exception as exc:
+            _ocr_error = f"OCRWorkerError: {_short_error(exc)}"
+            return []
+
         _ocr_error = "OCRWorkerError: OCR 처리 결과를 받지 못했습니다."
         return []
 
@@ -2143,31 +2225,62 @@ def read_text_from_ocr_server(ocr_image_path: Path) -> str | None:
     except Exception as exc:
         _perf_log("ocr_server", started_at, status="error")
         _ocr_error = f"OCRServerError: {_short_error(exc)}"
-        return ""
+        return None
 
     _perf_log("ocr_server", started_at, status="ok")
     if isinstance(payload, dict):
         text = payload.get("text")
         if isinstance(text, str):
             _ocr_error = None
-            return text.strip()
+            cleaned_text = text.strip()
+            return cleaned_text if cleaned_text else None
 
         texts = payload.get("texts")
         if isinstance(texts, list):
             _ocr_error = None
-            return " ".join(str(item) for item in texts if item).strip()
+            cleaned_text = " ".join(str(item) for item in texts if item).strip()
+            return cleaned_text if cleaned_text else None
 
     _ocr_error = "OCRServerError: OCR 서버 응답 형식이 올바르지 않습니다."
-    return ""
+    return None
 
 
 def _read_ocr_text_worker(image_path: str, result_queue) -> None:
     try:
-        reader = get_ocr_reader()
-        result = reader.readtext(image_path, detail=0)
-        result_queue.put(("ok", [text for text in result if text]))
+        result_queue.put(("ok", read_ocr_text_variants(image_path)))
     except Exception as exc:
         result_queue.put(("error", _short_error(exc)))
+
+
+def read_ocr_text_variants(image_path: str) -> list[str]:
+    reader = get_ocr_reader()
+    attempts = (
+        {"detail": 0},
+        {
+            "detail": 0,
+            "canvas_size": 1280,
+            "min_size": 20,
+            "bbox_min_size": 8,
+            "text_threshold": 0.4,
+            "low_text": 0.2,
+        },
+        {
+            "detail": 0,
+            "canvas_size": 1920,
+            "min_size": 10,
+            "bbox_min_size": 5,
+            "text_threshold": 0.3,
+            "low_text": 0.1,
+        },
+    )
+    best_result: list[str] = []
+    for options in attempts:
+        result = [text for text in reader.readtext(image_path, **options) if text]
+        if len(" ".join(result)) > len(" ".join(best_result)):
+            best_result = result
+        if len(best_result) >= 8 or len(" ".join(best_result)) >= 120:
+            break
+    return best_result
 
 
 def get_ocr_reader():
@@ -2270,9 +2383,12 @@ def tokenize_text(value: str) -> set[str]:
 
 
 def expand_subject(subject: str) -> str:
-    alias = SUBJECT_ALIASES.get(subject.replace(" ", ""), "") or SUBJECT_ALIASES.get(subject, "")
+    alias = SUBJECT_ALIASES.get(normalize_subject_key(subject), "") or SUBJECT_ALIASES.get(subject, "")
+    related_aliases = related_subject_aliases(subject)
     if alias:
-        return f"{subject} {alias}".strip()
+        return f"{subject} {alias} {related_aliases}".strip()
+    if related_aliases:
+        return f"{subject} {related_aliases}".strip()
 
     generic_context = (
         "lecture textbook notes workbook problem solving equation diagram concept "
@@ -2293,7 +2409,7 @@ def chunk_text(value: str, chunk_size: int = 320) -> list[str]:
 
 
 def score_subject_keyword_match(subject: str, extracted_text: str) -> tuple[int, str]:
-    normalized_subject = subject.replace(" ", "").lower()
+    normalized_subject = normalize_subject_key(subject).lower()
     normalized_text = normalize_text_for_match(extracted_text)
     if normalized_subject and normalized_subject.lower() in normalized_text:
         return TEXT_SCORE_MAX, "subject_direct_match"
@@ -2315,12 +2431,53 @@ def score_subject_keyword_match(subject: str, extracted_text: str) -> tuple[int,
 
 
 def subject_core_keywords(subject: str) -> set[str]:
-    compact_subject = subject.replace(" ", "")
-    return (
+    compact_subject = normalize_subject_key(subject)
+    keywords = set(
         SUBJECT_CORE_KEYWORDS.get(compact_subject)
         or SUBJECT_CORE_KEYWORDS.get(subject)
         or set()
     )
+    for related_subject in related_subject_names(subject):
+        keywords.update(SUBJECT_CORE_KEYWORDS.get(related_subject, set()))
+    return keywords
+
+
+def normalize_subject_key(subject: str) -> str:
+    return "".join(char for char in subject if char.isalnum())
+
+
+def related_subject_names(subject: str) -> tuple[str, ...]:
+    compact_subject = normalize_subject_key(subject)
+    if not compact_subject:
+        return ()
+
+    related: list[str] = []
+    for trigger, subject_names in SUBJECT_FAMILY_SUBJECTS.items():
+        if trigger == "물리" and "물리치료" in compact_subject:
+            continue
+        if trigger in compact_subject:
+            related.extend(subject_names)
+
+    exact_key = SUBJECT_ALIASES.get(compact_subject) or SUBJECT_CORE_KEYWORDS.get(compact_subject)
+    if exact_key:
+        related = [name for name in related if name != compact_subject]
+
+    deduped = []
+    seen = set()
+    for name in related:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+    return tuple(deduped)
+
+
+def related_subject_aliases(subject: str) -> str:
+    aliases = [
+        SUBJECT_ALIASES[name]
+        for name in related_subject_names(subject)
+        if name in SUBJECT_ALIASES
+    ]
+    return " ".join(aliases)
 
 
 def matched_keywords(keywords: set[str], extracted_text: str) -> set[str]:
@@ -2487,6 +2644,50 @@ def is_formula_heavy_subject(subject: str) -> bool:
 
 def has_strong_study_evidence(text_score: int) -> bool:
     return text_score >= STRONG_TEXT_SCORE
+
+
+def adjust_ocr_text_score(
+    extracted_text: str,
+    text_score: int,
+    text_reason: str,
+    scene_score: int,
+) -> tuple[int, str]:
+    cleaned_text = extracted_text.strip()
+    if not cleaned_text:
+        if scene_score >= MISSING_OCR_SCENE_THRESHOLD:
+            boosted_score = max(text_score, MISSING_OCR_TEXT_SCORE)
+            return (
+                boosted_score,
+                f"{text_reason}, missing_ocr_scene_floor={boosted_score}",
+            )
+        return text_score, text_reason
+
+    if text_score <= 0 or not is_likely_corrupted_ocr_text(cleaned_text):
+        return text_score, text_reason
+
+    boosted_score = min(TEXT_SCORE_MAX, round(text_score * 1.5))
+    if boosted_score <= text_score:
+        return text_score, text_reason
+
+    return boosted_score, f"{text_reason}, corrupted_ocr_boost=1.5x:{boosted_score}"
+
+
+def is_likely_corrupted_ocr_text(extracted_text: str) -> bool:
+    cleaned_text = extracted_text.strip()
+    if len(cleaned_text) < 30:
+        return False
+
+    suspicious_chars = sum(1 for char in cleaned_text if char in "#`@\\|")
+    mixed_script_tokens = 0
+    for token in cleaned_text.split():
+        has_hangul = any("가" <= char <= "힣" for char in token)
+        has_ascii = any(("a" <= char.lower() <= "z") or char.isdigit() for char in token)
+        if has_hangul and has_ascii:
+            mixed_script_tokens += 1
+
+    compact_length = max(len(cleaned_text.replace(" ", "")), 1)
+    suspicious_ratio = suspicious_chars / compact_length
+    return suspicious_chars >= 2 or suspicious_ratio >= 0.02 or mixed_script_tokens >= 2
 
 
 def has_ocr_timeout(text_reason: str) -> bool:
